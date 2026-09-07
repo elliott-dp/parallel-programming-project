@@ -9,10 +9,9 @@
 # E9 -- THE headline ablation: blocking vs ibcast(+lookahead) vs shared
 # memory, at a fixed problem size and rank count, with and without the
 # node-aware grid mapping. Everything else is held constant.
-module load gcc91
-# module load <your-mpi-module>
-
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
 make clean && make || exit 1
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 

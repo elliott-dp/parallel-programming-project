@@ -17,10 +17,9 @@
 # work per rank for GEMM. A flat time curve would therefore be a bug, not a
 # success -- the expected curve rises as sqrt(P). Gustafson framing applies
 # to the memory-constrained problem, not to the flop count.
-module load gcc91
-# module load <your-mpi-module>
-
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
 make clean && make || exit 1
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 

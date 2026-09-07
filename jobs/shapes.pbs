@@ -8,10 +8,9 @@
 
 # E8 -- the originality claim: planner-chosen decomposition vs a fixed
 # square grid, across five matrix shapes.
-module load gcc91
-# module load <your-mpi-module>
-
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
 make clean && make || exit 1
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 NP=64

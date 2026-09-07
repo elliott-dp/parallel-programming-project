@@ -14,10 +14,9 @@
 # panel traffic by sqrt(2). Going 128x1 -> 8x16 should cut it by 4x. Panel
 # buffers are also shared by the threads of a rank instead of replicated per
 # core. This costs no new code -- the kernel is already threaded.
-module load gcc91
-# module load <your-mpi-module>
-
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
 make clean && make || exit 1
 export OMP_PROC_BIND=close OMP_PLACES=cores
 

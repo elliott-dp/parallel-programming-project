@@ -8,8 +8,8 @@
 
 # E6 -- 2.5D replication sweep. The model predicts an optimum near
 # c = P^(1/3); this measures where it actually is.
-module load gcc91
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
 make clean && make || exit 1
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 

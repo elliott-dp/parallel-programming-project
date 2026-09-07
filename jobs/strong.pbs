@@ -7,10 +7,9 @@
 #PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
 
 # E3 -- strong scaling: fixed problem, growing P.
-module load gcc91
-# module load <your-mpi-module>      # run `module avail` first
-
 cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
 make clean && make || exit 1
 
 export OMP_NUM_THREADS=1
