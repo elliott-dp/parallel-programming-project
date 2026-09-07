@@ -1,0 +1,32 @@
+#!/bin/bash
+#PBS -N gemm2d_shm
+#PBS -o results/shm.out
+#PBS -e results/shm.err
+#PBS -q short_cpuQ
+#PBS -l walltime=1:00:00
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+
+# E9 -- THE headline ablation: blocking vs ibcast(+lookahead) vs shared
+# memory, at a fixed problem size and rank count, with and without the
+# node-aware grid mapping. Everything else is held constant.
+module load gcc91
+# module load <your-mpi-module>
+
+cd "$PBS_O_WORKDIR" || exit 1
+make clean && make || exit 1
+export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
+
+N=8192
+NP=128
+for MAP in linear nodeaware; do
+  for POLICY in "blocking 0" "ibcast 0" "ibcast 1" "shm 0"; do
+    set -- $POLICY
+    for REP in $(seq 1 10); do
+      mpiexec -n $NP --map-by core --bind-to core \
+        ./gemm2d --M $N --N $N --K $N --engine summa --b 256 \
+                 --bcast "$1" --lookahead "$2" --gridmap $MAP \
+                 --reps 1 --warmup 1 --quiet \
+                 --tag "shm_ablation" --csv results/shm_ablation.csv
+    done
+  done
+done

@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -N gemm2d_csweep
+#PBS -o results/csweep.out
+#PBS -e results/csweep.err
+#PBS -q short_cpuQ
+#PBS -l walltime=1:00:00
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+
+# E6 -- 2.5D replication sweep. The model predicts an optimum near
+# c = P^(1/3); this measures where it actually is.
+module load gcc91
+cd "$PBS_O_WORKDIR" || exit 1
+make clean && make || exit 1
+export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
+
+N=8192
+NP=64
+for C in 1 2 4 8 16; do
+  for REP in $(seq 1 10); do
+    mpiexec -n $NP ./gemm2d --M $N --N $N --K $N --engine summa25d --c $C \
+        --b 256 --reps 1 --warmup 1 --quiet \
+        --tag csweep --csv results/csweep.csv
+  done
+done

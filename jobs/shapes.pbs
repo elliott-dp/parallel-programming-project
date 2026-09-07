@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -N gemm2d_shapes
+#PBS -o results/shapes.out
+#PBS -e results/shapes.err
+#PBS -q short_cpuQ
+#PBS -l walltime=2:00:00
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+
+# E8 -- the originality claim: planner-chosen decomposition vs a fixed
+# square grid, across five matrix shapes.
+module load gcc91
+# module load <your-mpi-module>
+
+cd "$PBS_O_WORKDIR" || exit 1
+make clean && make || exit 1
+export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
+NP=64
+
+#        M      N      K       label
+SHAPES="8192:8192:8192:square
+16384:16384:512:tall_skinny
+1024:1024:262144:short_fat
+32768:1024:2048:tall_A
+1024:32768:2048:wide_B"
+
+for S in $SHAPES; do
+  IFS=: read -r M N K LAB <<< "$S"
+  for REP in $(seq 1 10); do
+    # fixed square-ish grid, no planning
+    mpiexec -n $NP ./gemm2d --M $M --N $N --K $K --engine summa25d --c 1 \
+        --Pr 8 --Pc 8 --b 256 --reps 1 --warmup 1 --quiet \
+        --tag "fixed_$LAB" --csv results/shapes.csv
+    # calibrated planner picks Pr, Pc, c, b
+    mpiexec -n $NP ./gemm2d --M $M --N $N --K $K --engine summa25d \
+        --plan --calibrate --mem-gb 2 --reps 1 --warmup 1 --quiet \
+        --tag "plan_$LAB" --csv results/shapes.csv
+  done
+done

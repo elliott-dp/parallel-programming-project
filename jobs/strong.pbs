@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N gemm2d_strong
+#PBS -o results/strong.out
+#PBS -e results/strong.err
+#PBS -q short_cpuQ
+#PBS -l walltime=1:00:00
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+
+# E3 -- strong scaling: fixed problem, growing P.
+module load gcc91
+# module load <your-mpi-module>      # run `module avail` first
+
+cd "$PBS_O_WORKDIR" || exit 1
+make clean && make || exit 1
+
+export OMP_NUM_THREADS=1
+export OMP_PROC_BIND=close
+export OMP_PLACES=cores
+
+N=8192
+for NP in 1 2 4 8 16 32 64 128; do
+  for REP in $(seq 1 10); do
+    mpiexec -n $NP --map-by core --bind-to core \
+      ./gemm2d --M $N --N $N --K $N --engine summa --b 256 \
+               --verify freivalds --reps 1 --warmup 1 --quiet \
+               --tag strong --csv results/strong.csv
+  done
+done
