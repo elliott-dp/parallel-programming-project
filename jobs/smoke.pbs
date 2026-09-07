@@ -4,7 +4,7 @@
 #PBS -e results/smoke.err
 #PBS -q shortCPUQ
 #PBS -l walltime=0:20:00
-#PBS -l select=1:ncpus=9:mpiprocs=9:mem=8gb
+#PBS -l select=1:ncpus=16:mpiprocs=16:mem=32gb:cpu_type=Xeon6140M:net_type=OP
 #PBS -l place=scatter:excl
 
 # Build and run the correctness suite. Cluster policy 6.2 forbids executing any

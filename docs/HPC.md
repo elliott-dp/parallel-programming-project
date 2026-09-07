@@ -125,14 +125,32 @@ independent variable would be the network, not the thing you varied. Guide §11 
 IDs to be noted for exactly this reason. If the sets differ, either resubmit to get a
 consistent allocation or report the split honestly.
 
-### Placement — the setting that decides whether the results mean anything
+### Node selection — the setting that decides whether the results mean anything
 
 Every job now carries:
 
 ```
-#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l select=4:ncpus=64:mpiprocs=64:mem=64gb:cpu_type=Xeon6140M:net_type=OP
 #PBS -l place=scatter:excl
 ```
+
+That targets the **15 × 72-core Xeon6140M Omni-Path nodes** — the largest fully homogeneous
+group in `shortCPUQ` — and takes 4 of them, giving **256 ranks**.
+
+All four resources are load-bearing:
+
+| resource | why |
+|---|---|
+| `cpu_type=Xeon6140M` | one CPU generation. Also a **correctness** requirement: the build uses `-march=native`, so a binary compiled on a newer Xeon can die with SIGILL on an older one. `jobs/smoke.pbs`, which does the build, pins the same `cpu_type`. |
+| `net_type=OP` | pinning `cpu_type` alone is **not enough**: 83 nodes are Xeon6252N, of which 81 are 10 GbE and 2 are Omni-Path. An allocation could straddle two fabrics whose `beta` differs by ~10×. |
+| `place=scatter` | one chunk per physical node. Nodes here have 48–96 cores, so without it PBS can pack all four chunks onto one machine and the multi-node experiments never cross the network. |
+| `excl` | a neighbour's job on the same node destroys timing reproducibility. |
+
+`jobs/env.sh` also counts the distinct hosts in `$PBS_NODEFILE` and **aborts** if it is not 4.
+
+**A fabric comparison is a good result in itself** (guide §9 asks for intra- vs inter-node
+`alpha`/`beta`). To repeat any job on 10 GbE, drop `:net_type=OP`, use `:cpu_type=Xeon6252N`
+and `ncpus=96` — 81 nodes back that, so it queues faster.
 
 `scatter` puts **one chunk per physical node**; `excl` gives exclusive use of each.
 
@@ -155,18 +173,22 @@ the report's experimental setup — shared nodes widen the confidence intervals.
 
 ### Sizing
 
-The scripts ask for 128 cores, which is 0.84% of this cluster, so the request itself should be
-easy to satisfy. Run `./scripts/cluster_probe.sh` first and check:
+`shortCPUQ` caps walltime at **6 h** and allows 30 running / 30 queued jobs per user, so the
+six-job campaign fits comfortably. Walltimes are set to 3 h or 5 h, under the cap.
 
-* **`ncpus=32` against the real node size.** If the queue's nodes have more (76 on average
-  here), raising `ncpus`/`mpiprocs` to the full node and dropping to fewer chunks gives cleaner
-  intra- vs inter-node behaviour. If they have fewer, `select` will never be satisfied.
-* **the queue's `resources_max.walltime`.** `strong.pbs` and `shapes.pbs` ask for 2 h.
+The sweeps now run at **256 ranks** rather than the 128 the guide's plan assumed:
 
-With this much capacity you could extend the strong-scaling range past 128 for a more
-convincing curve — change `select` to `8:ncpus=32:...` and add `256` to the `NP` loop in
-`jobs/strong.pbs`, and bump `EXPECT_NODES` to match. Not required; the guide's plan stops at
-128.
+| job | scale |
+|---|---|
+| `strong.pbs` | `P = 1 … 256` |
+| `weak.pbs` | `P = 1, 4, 16, 64, 256`, `n = 2048·√P` |
+| `shapes.pbs` | `P = 256`, fixed grid `16 × 16` vs planner |
+| `csweep.pbs` | `P = 256`, `c = 1 … 16` (`P^(1/3)` ≈ 6.3, so the predicted optimum is 4–8) |
+| `shm_ablation.pbs` | `P = 256`, 64 ranks per node — the regime the technique targets |
+| `hybrid.pbs` | ranks × threads ∈ {256×1 … 4×64}, 256 cores throughout |
+
+Only 15 nodes carry the pinned `cpu_type` + `net_type`, so if 4 exclusive ones are slow to
+free up, drop `:excl` (keep `scatter`) and note it in the experimental setup.
 
 ## 4. Plot
 
@@ -177,6 +199,16 @@ python3 scripts/plot_results.py results/shapes.csv       --kind shapes
 python3 scripts/plot_results.py results/csweep.csv       --kind csweep
 python3 scripts/plot_results.py results/shm_ablation.csv --kind ablation
 python3 scripts/plot_results.py results/hybrid.csv       --kind hybrid
+```
+
+The system Python 3.9 has no matplotlib, but the cluster provides it as a module. Plot in a
+**separate shell** from the one used to build — the toolchains differ and loading both will
+conflict:
+
+```bash
+module purge
+module load matplotlib/3.7.2-gfbf-2023a
+python3 scripts/plot_results.py results/strong.csv --kind strong
 ```
 
 Without matplotlib it prints the tables and skips the figures, which is enough to read the

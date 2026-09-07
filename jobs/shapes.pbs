@@ -3,9 +3,39 @@
 #PBS -o results/shapes.out
 #PBS -e results/shapes.err
 #PBS -q shortCPUQ
-#PBS -l walltime=2:00:00
-#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l walltime=5:00:00
+#PBS -l select=4:ncpus=64:mpiprocs=64:mem=64gb:cpu_type=Xeon6140M:net_type=OP
 #PBS -l place=scatter:excl
+
+# ---------------------------------------------------------------------------
+# NODE SELECTION -- all four resources below are deliberate.
+#
+#   cpu_type=Xeon6140M   one CPU generation. Mixing generations makes a
+#                        scaling curve measure node heterogeneity, not scaling.
+#                        It is ALSO a correctness requirement: the build uses
+#                        -march=native, so a binary compiled on a newer Xeon
+#                        (e.g. Cascade Lake Xeon6252N) can die with SIGILL on
+#                        an older one. jobs/smoke.pbs -- which does the build --
+#                        pins the same cpu_type for exactly this reason.
+#   net_type=OP          Omni-Path. Only 22 of shortCPUQ's nodes have it, and
+#                        pinning cpu_type alone would NOT be enough: 83 nodes
+#                        are Xeon6252N, of which 2 are Omni-Path and 81 are
+#                        10 GbE, so an allocation could silently straddle two
+#                        fabrics with a 10x difference in beta.
+#   place=scatter:excl   one chunk per physical node, exclusively. Nodes here
+#                        have 48-96 cores, so without scatter PBS may pack all
+#                        four chunks onto one machine and the "multi-node"
+#                        experiments would never cross the network.
+#   ncpus=64             of the 72 available. A power of two keeps the strong
+#                        scaling and hybrid sweeps clean.
+#
+# This gives 4 nodes x 64 = 256 ranks, drawn from the 15 x 72-core Xeon6140M
+# Omni-Path nodes -- the largest fully homogeneous group in this queue.
+#
+# To repeat the campaign on 10 GbE instead (a fabric comparison is a good
+# result in itself, see guide S9): drop ':net_type=OP' and use
+# ':cpu_type=Xeon6252N' with ncpus=96, which has 81 nodes behind it.
+# ---------------------------------------------------------------------------
 
 # E8 -- the originality claim: planner-chosen decomposition vs a fixed
 # square grid, across five matrix shapes.
@@ -18,7 +48,7 @@ EXPECT_NODES=4
 #     qsub -I -l select=1:ncpus=4 -q shortCPUQ   # then: . jobs/env.sh && make
 [ -x ./gemm2d ] || { echo "ERROR: ./gemm2d not built. See docs/HPC.md step 2."; exit 1; }
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
-NP=64
+NP=256
 
 #        M      N      K       label
 SHAPES="8192:8192:8192:square
@@ -32,7 +62,7 @@ for S in $SHAPES; do
   for REP in $(seq 1 10); do
     # fixed square-ish grid, no planning
     mpiexec -n $NP ./gemm2d --M $M --N $N --K $K --engine summa25d --c 1 \
-        --Pr 8 --Pc 8 --b 256 --reps 1 --warmup 1 --quiet \
+        --Pr 16 --Pc 16 --b 256 --reps 1 --warmup 1 --quiet \
         --tag "fixed_$LAB" --csv results/shapes.csv
     # calibrated planner picks Pr, Pc, c, b
     mpiexec -n $NP ./gemm2d --M $M --N $N --K $K --engine summa25d \
