@@ -184,6 +184,18 @@ int main(int argc, char **argv)
             t1 = MPI_Wtime();
             t0 = t1 - t0;
             MPI_Reduce(&t0, &tmax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+            {   /* same reductions as the 2D path, so the CSV columns mean the
+                 * same thing for every engine and the comparison is honest */
+                double cw[2], cwmax[2], bs[2], bsum[2];
+                cw[0] = g_cnt.t_comm; cw[1] = g_cnt.t_comp;
+                MPI_Reduce(cw, cwmax, 2, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+                bs[0] = g_cnt.bytes_offnode; bs[1] = g_cnt.bytes_rank;
+                MPI_Reduce(bs, bsum, 2, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+                if (rep >= 0 && !wrank) {
+                    rows[rep].wire = bsum[0] / 1e9; rows[rep].rank = bsum[1] / 1e9;
+                    rows[rep].comm = cwmax[0];      rows[rep].comp = cwmax[1];
+                }
+            }
             if (rep == reps - 1) err = e;
             if (rep >= 0 && !wrank) {
                 double gf = 2.0 * M * N * K / (tmax * 1e9);
@@ -199,9 +211,10 @@ int main(int argc, char **argv)
         if (csv && !wrank && (cf = csv_open(csv)) != NULL) {
             for (rep = 0; rep < reps; rep++)
                 fprintf(cf, "%s,naive1d,-,%s,-,0,%d,%d,%d,%d,%d,1,1,0,%d,0,%d,"
-                            "%.6f,%.3f,0,0,0,0,%.3e\n",
+                            "%.6f,%.3f,%.6f,%.6f,%.6f,%.6f,%.3e\n",
                         tag, kernel_name(krn), M, N, K, P, P, threads, rep,
-                        rows[rep].t, rows[rep].gf, err);
+                        rows[rep].t, rows[rep].gf, rows[rep].wire, rows[rep].rank,
+                        rows[rep].comm, rows[rep].comp, err);
             fclose(cf);
         }
         free(rows);

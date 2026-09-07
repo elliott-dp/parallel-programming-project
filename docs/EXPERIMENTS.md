@@ -32,6 +32,11 @@ Total runtime: a few minutes. It writes `results/kernel.csv`, `results/engines.c
 | E2a | `alpha`, `beta`, `gamma` intra-node | table row | ping-pong within a node is a real measurement |
 | §10.4 | cross-configuration consistency across `(engine, c, b)` | table | pure numerics, no scale needed |
 | E8a | planner's chosen grid per shape at `P = 64,128,256` | table | `--plan-report` runs the cost model with **no MPI job at all** |
+| E8b' | planner **vs fixed grid**, measured, at small `P` | **Figure — the headline, at small scale** | the shape effect is an algorithmic effect, so it is visible even intra-node |
+| E3' | strong scaling within one node | figure | real, but a shared-memory result — label it as such |
+| E6' | `c` sweep at small `P` | figure | the `c` trade-off is partly algorithmic |
+| E9' | broadcast policy, **off-node bytes only** | half a figure | byte counts are deterministic, so they are honest on one box; the *timings* are not |
+| E10' | ranks x threads at fixed cores | table | traffic reduction is visible; the time difference is not, on one node |
 
 Plot them:
 
@@ -40,6 +45,12 @@ python3 scripts/plot_results.py results/kernel.csv  --kind kernel
 python3 scripts/plot_results.py results/engines.csv --kind engines
 python3 scripts/plot_results.py results/bsweep.csv  --kind bsweep
 ```
+
+**Two settings decide whether Half A is worth anything.** Bind ranks to cores
+(`--bind-to core`, the default here) and make each run long enough that it measures the
+algorithm rather than MPI start-up jitter. Getting these wrong once produced intervals a factor
+of several wide; fixing them brought every interval below +/-5% of the median with no other
+change. Do not oversubscribe: `NP` must be at most the core count.
 
 **Watch the confidence intervals.** On a contended or oversubscribed box, `E5` and `E7` produce
 wide intervals — running `P` ranks on `P` cores while the OS and everything else compete gives
