@@ -5,10 +5,12 @@
 #PBS -q short_cpuQ
 #PBS -l walltime=2:00:00
 #PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l place=scatter:excl
 
 # E8 -- the originality claim: planner-chosen decomposition vs a fixed
 # square grid, across five matrix shapes.
 cd "$PBS_O_WORKDIR" || exit 1
+EXPECT_NODES=4
 . jobs/env.sh
 
 # Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one

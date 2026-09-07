@@ -55,4 +55,20 @@ if [ -n "${PBS_NODEFILE:-}" ] && [ -r "$PBS_NODEFILE" ]; then
       echo "# slots: $(wc -l < "$PBS_NODEFILE")"
     } > "results/${_tag}.nodes"
     echo "# nodes recorded in results/${_tag}.nodes"
+
+    # Assert the allocation is actually spread over the nodes the experiment
+    # needs. PBS defaults to place=free, and this cluster's nodes average 76
+    # cores, so four 32-core chunks can legally land on ONE node. A job that
+    # believes it is multi-node but is not will report that the shared-memory
+    # broadcast makes no difference and that scaling is perfect -- both wrong,
+    # and both indistinguishable from a real result. Fail loudly instead.
+    _got=$(sort -u "$PBS_NODEFILE" | wc -l)
+    echo "# distinct nodes in this allocation: $_got"
+    if [ -n "${EXPECT_NODES:-}" ] && [ "$_got" -ne "${EXPECT_NODES}" ]; then
+        echo "ERROR: expected ${EXPECT_NODES} distinct nodes, got $_got."
+        echo "       The results from this allocation would not mean what the"
+        echo "       experiment claims. Check '#PBS -l place=scatter:excl' is"
+        echo "       present and that the queue honours it."
+        exit 1
+    fi
 fi

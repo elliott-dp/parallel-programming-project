@@ -5,6 +5,7 @@
 #PBS -q short_cpuQ
 #PBS -l walltime=1:00:00
 #PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l place=scatter:excl
 
 # E4 -- weak scaling. The guide (S11) insists the scaling function be stated
 # explicitly, so: MEMORY PER PROCESS IS HELD CONSTANT. Each rank owns
@@ -18,6 +19,7 @@
 # success -- the expected curve rises as sqrt(P). Gustafson framing applies
 # to the memory-constrained problem, not to the flop count.
 cd "$PBS_O_WORKDIR" || exit 1
+EXPECT_NODES=4
 . jobs/env.sh
 
 # Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one

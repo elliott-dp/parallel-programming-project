@@ -5,6 +5,7 @@
 #PBS -q short_cpuQ
 #PBS -l walltime=1:00:00
 #PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l place=scatter:excl
 
 # E10 -- hybrid MPI + OpenMP at a FIXED core count (128 cores = 4 x 32).
 # Sweep ranks x threads and keep ranks*threads == 128 throughout.
@@ -15,6 +16,7 @@
 # buffers are also shared by the threads of a rank instead of replicated per
 # core. This costs no new code -- the kernel is already threaded.
 cd "$PBS_O_WORKDIR" || exit 1
+EXPECT_NODES=4
 . jobs/env.sh
 
 # Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one

@@ -125,9 +125,48 @@ independent variable would be the network, not the thing you varied. Guide §11 
 IDs to be noted for exactly this reason. If the sets differ, either resubmit to get a
 consistent allocation or report the split honestly.
 
-**Adjust `#PBS -l select=...` to match your queue.** The scripts ask for
-`4:ncpus=32:mpiprocs=32:mem=64gb` (128 cores). If `short_cpuQ` gives you less, lower the rank
-counts in the loops to match, or the jobs will sit in the queue or fail to start.
+### Placement — the setting that decides whether the results mean anything
+
+Every job now carries:
+
+```
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+#PBS -l place=scatter:excl
+```
+
+`scatter` puts **one chunk per physical node**; `excl` gives exclusive use of each.
+
+Both matter here. This cluster has ~15,300 cores over ~200 nodes, i.e. roughly **76 cores per
+node** — so two 32-core chunks fit comfortably on one node, and PBS's default (`place=free`)
+may legally pack all four onto one or two machines. A job that believes it is running on four
+nodes but is not will report that the shared-memory broadcast changes nothing and that strong
+scaling is near-perfect. Both would be wrong, and neither is distinguishable from a real
+result by looking at the numbers.
+
+`excl` matters for a different reason: sharing a node with someone else's job destroys timing
+reproducibility, which is the entire premise of the §11 statistical protocol.
+
+As a backstop, `jobs/env.sh` counts the distinct nodes in `$PBS_NODEFILE` and **aborts** if it
+does not match what the job declared in `EXPECT_NODES`. A misplaced allocation fails loudly
+instead of producing a plausible, wrong figure.
+
+If exclusive access makes the queue wait too long, drop `:excl` (keep `scatter`) and say so in
+the report's experimental setup — shared nodes widen the confidence intervals.
+
+### Sizing
+
+The scripts ask for 128 cores, which is 0.84% of this cluster, so the request itself should be
+easy to satisfy. Run `./scripts/cluster_probe.sh` first and check:
+
+* **`ncpus=32` against the real node size.** If the queue's nodes have more (76 on average
+  here), raising `ncpus`/`mpiprocs` to the full node and dropping to fewer chunks gives cleaner
+  intra- vs inter-node behaviour. If they have fewer, `select` will never be satisfied.
+* **the queue's `resources_max.walltime`.** `strong.pbs` and `shapes.pbs` ask for 2 h.
+
+With this much capacity you could extend the strong-scaling range past 128 for a more
+convincing curve — change `select` to `8:ncpus=32:...` and add `256` to the `NP` loop in
+`jobs/strong.pbs`, and bump `EXPECT_NODES` to match. Not required; the guide's plan stops at
+128.
 
 ## 4. Plot
 
