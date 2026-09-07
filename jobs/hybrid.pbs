@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N gemm2d_hybrid
+#PBS -o results/hybrid.out
+#PBS -e results/hybrid.err
+#PBS -q short_cpuQ
+#PBS -l walltime=1:00:00
+#PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
+
+# E10 -- hybrid MPI + OpenMP at a FIXED core count (128 cores = 4 x 32).
+# Sweep ranks x threads and keep ranks*threads == 128 throughout.
+#
+# Why it should matter (S7.3): total network volume over all ranks is
+# P * 2n^2/sqrt(P) = 2n^2*sqrt(P), so halving the rank count cuts aggregate
+# panel traffic by sqrt(2). Going 128x1 -> 8x16 should cut it by 4x. Panel
+# buffers are also shared by the threads of a rank instead of replicated per
+# core. This costs no new code -- the kernel is already threaded.
+module load gcc91
+# module load <your-mpi-module>
+
+cd "$PBS_O_WORKDIR" || exit 1
+make clean && make || exit 1
+export OMP_PROC_BIND=close OMP_PLACES=cores
+
+N=8192
+for REP in $(seq 1 10); do            # REP outer: interleave (see strong.pbs)
+  #        ranks threads  ppr-per-node
+  for CFG in "128 1 32" "64 2 16" "32 4 8" "16 8 4" "8 16 2" "4 32 1"; do
+    set -- $CFG
+    OMP_NUM_THREADS=$2 mpiexec -n $1 --map-by ppr:$3:node:pe=$2 --bind-to core \
+      ./gemm2d --M $N --N $N --K $N --engine summa --b 256 \
+               --reps 1 --warmup 1 --quiet \
+               --tag "hybrid_${1}x${2}" --csv results/hybrid.csv
+  done
+done

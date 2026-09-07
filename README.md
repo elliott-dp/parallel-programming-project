@@ -12,8 +12,17 @@
 | **arbitrary decomposition** | grid, replication depth and panel width chosen by a calibrated cost model, not hardcoded |
 
 Four interchangeable engines (`naive1d`, `cannon`, `summa`, `summa25d`), three interchangeable
-broadcast policies (`blocking`, `ibcast`, `shm`), two local kernels, two grid mappings — every one
+broadcast policies (`blocking`, `ibcast`, `shm`), three local kernels, two grid mappings — every one
 of them selectable from the command line so each is a single-flag ablation.
+
+Local kernel throughput, one rank, one thread, `M=N=1024`, `K=256` (a SUMMA panel), on an
+Intel Xeon @2.8 GHz with AVX-512:
+
+| `--kernel` | Gflop/s | what it is |
+|---|---|---|
+| `naive` | 7.1 | textbook `i-k-j`, no blocking — the honest bad baseline |
+| `blocked` | 10.7 | `(MC,KC,NC)` cache tiling, operands read in place |
+| `packed` | **31.2** | packed panels + an `8x8` register tile (default) |
 
 ---
 
@@ -28,6 +37,12 @@ make clean
 Requirements: any MPI-3 implementation (MPI-4 is used when available), a C11 compiler, OpenMP.
 
 Verified with: **gcc 13.3.0**, **Open MPI 4.1.6**, Ubuntu 24.04.
+
+The default flags include `-ffp-contract=fast`, which lets the compiler fuse `a*b+c` into a single
+FMA. GCC disables contraction in strict ISO mode (`-std=c11`), which costs about 20%. This is much
+weaker than `-ffast-math` — no reassociation, no algebraic rewriting, just one fewer rounding step
+per product — but it does change the last bit of a result, so it is reported here rather than
+hidden. Build with `make OPT="-O3 -march=native -ffp-contract=off"` to turn it off.
 On the cluster: `module load gcc91` and the site MPI module — run `module avail` to get its exact
 name, then put it in `jobs/*.pbs` where the placeholder is.
 
@@ -50,7 +65,9 @@ Everything is a command-line flag; nothing is a compile-time constant.
   automatically (aspect-matched) when they are omitted, or by the cost model with `--plan`
 * threads per rank → `OMP_NUM_THREADS` (plus `OMP_PROC_BIND=close OMP_PLACES=cores`)
 * panel width → `--b` (default 128)
-* local cache tiles → `make OPT="-O3 -march=native -DMC=64 -DKC=256 -DNC=512"`
+* local cache tiles → `make OPT="-O3 -march=native -DMC=64 -DKC=256 -DNC=512"` (`blocked`)
+  or `-DKMR=8 -DKNR=8 -DKMC=256 -DKKC=256 -DKNC=1024` (`packed`; `KMR` must be one of
+  4, 6, 8, 10, 12, 14, 16)
 
 ### All flags
 
@@ -61,7 +78,7 @@ Everything is a command-line flag; nothing is a compile-time constant.
 | `--engine` | `naive1d cannon summa summa25d` | `summa` | algorithm |
 | `--bcast` | `blocking ibcast shm` | `blocking` | panel broadcast policy |
 | `--lookahead` | 0,1 | 0 | one step of lookahead (`ibcast` only) |
-| `--kernel` | `naive blocked` | `blocked` | local kernel |
+| `--kernel` | `naive blocked packed` | `packed` | local kernel |
 | `--gridmap` | `linear nodeaware` | `linear` | rank → grid-coordinate mapping |
 | `--Pr --Pc --c` | int | auto | process grid, `Pr*Pc*c == P` |
 | `--b` | int | 128 | SUMMA panel width |

@@ -49,7 +49,12 @@ const char *bcast_name(bcast_t b)
 }
 const char *kernel_name(kernel_t k)
 {
-    return k == KRN_NAIVE ? "naive" : "blocked";
+    switch (k) {
+    case KRN_NAIVE:   return "naive";
+    case KRN_BLOCKED: return "blocked";
+    case KRN_PACKED:  return "packed";
+    }
+    return "?";
 }
 const char *gridmap_name(gridmap_t g)
 {

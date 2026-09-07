@@ -76,8 +76,11 @@ run "freivalds summa"      -n 4 $BIN --M 400 --N 380 --K 360 --b 32 --verify fre
 run "freivalds 2.5D"       -n 8 $BIN --M 400 --N 380 --K 360 --engine summa25d --c 2 --b 32 --verify freivalds --trials 3 --reps 1 --warmup 0 --quiet
 run "freivalds beta!=0"    -n 4 $BIN --M 400 --N 380 --K 360 --b 32 --alpha 1.5 --beta -0.5 --verify freivalds --trials 3 --reps 1 --warmup 0 --quiet
 
-echo "== naive kernel path =="
-run "kernel=naive"         -n 4 $BIN --M 61 --N 53 --K 47 --kernel naive --b 8 --verify ref --reps 1 --warmup 0 --quiet
+echo "== all three local kernels =="
+run "kernel=naive"         -n 4 $BIN --M 61 --N 53 --K 47 --kernel naive   --b 8 --verify ref --reps 1 --warmup 0 --quiet
+run "kernel=blocked"       -n 4 $BIN --M 61 --N 53 --K 47 --kernel blocked --b 8 --verify ref --reps 1 --warmup 0 --quiet
+run "kernel=packed"        -n 4 $BIN --M 61 --N 53 --K 47 --kernel packed  --b 8 --verify ref --reps 1 --warmup 0 --quiet
+run "packed, odd shapes"   -n 5 $BIN --M 97 --N 101 --K 103 --kernel packed --b 7 --verify ref --reps 1 --warmup 0 --quiet
 
 echo "== planner (the originality claim -- was previously untested) =="
 run "--plan"               -n 8 $BIN --M 61 --N 53 --K 47 --engine summa25d --plan --verify ref --reps 1 --warmup 0 --quiet

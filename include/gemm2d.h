@@ -34,7 +34,7 @@ int blk_owner(int G, int P, int k);   /* inverse of blk_off */
 /* ------------------------------------------------------------------ */
 typedef enum { ENG_NAIVE1D = 0, ENG_CANNON, ENG_SUMMA, ENG_SUMMA25D } engine_t;
 typedef enum { BC_BLOCKING = 0, BC_IBCAST, BC_SHM }                  bcast_t;
-typedef enum { KRN_NAIVE = 0, KRN_BLOCKED }                          kernel_t;
+typedef enum { KRN_NAIVE = 0, KRN_BLOCKED, KRN_PACKED }              kernel_t;
 typedef enum { MAP_LINEAR = 0, MAP_NODEAWARE }                       gridmap_t;
 typedef enum { VER_NONE = 0, VER_REF, VER_FREIVALDS }                verify_t;
 

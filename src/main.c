@@ -16,7 +16,7 @@ static void usage(void)
 "  --alpha --beta <float>  C := alpha*A*B + beta*C (default 1, 0)\n"
 "  --engine <name>         naive1d | cannon | summa | summa25d (default summa)\n"
 "  --bcast <name>          blocking | ibcast | shm      (default blocking)\n"
-"  --kernel <name>         naive | blocked              (default blocked)\n"
+"  --kernel <name>         naive | blocked | packed     (default packed)\n"
 "  --gridmap <name>        linear | nodeaware           (default linear)\n"
 "  --Pr --Pc <int>         process grid (default: aspect-matched)\n"
 "  --c <int>               2.5D replication depth       (default 1)\n"
@@ -50,6 +50,12 @@ static bcast_t parse_bcast(const char *s)
     if (!strcmp(s, "shm"))    return BC_SHM;
     return BC_BLOCKING;
 }
+static kernel_t parse_kernel(const char *s)
+{
+    if (!strcmp(s, "naive"))   return KRN_NAIVE;
+    if (!strcmp(s, "blocked")) return KRN_BLOCKED;
+    return KRN_PACKED;
+}
 static verify_t parse_verify(const char *s)
 {
     if (!strcmp(s, "ref"))       return VER_REF;
@@ -81,7 +87,7 @@ int main(int argc, char **argv)
     scalar_t alpha = 1.0, beta = 0.0;
     engine_t eng = ENG_SUMMA;
     bcast_t  bc  = BC_BLOCKING;
-    kernel_t krn = KRN_BLOCKED;
+    kernel_t krn = KRN_PACKED;
     gridmap_t map = MAP_LINEAR;
     verify_t ver = VER_NONE;
     const char *csv = NULL, *tag = "run";
@@ -119,7 +125,7 @@ int main(int argc, char **argv)
         if (!strcmp(a, "--engine")  && i + 1 < argc) { eng = parse_engine(argv[++i]); continue; }
         if (!strcmp(a, "--bcast")   && i + 1 < argc) { bc  = parse_bcast(argv[++i]);  continue; }
         if (!strcmp(a, "--verify")  && i + 1 < argc) { ver = parse_verify(argv[++i]); continue; }
-        if (!strcmp(a, "--kernel")  && i + 1 < argc) { krn = strcmp(argv[++i], "naive") ? KRN_BLOCKED : KRN_NAIVE; continue; }
+        if (!strcmp(a, "--kernel")  && i + 1 < argc) { krn = parse_kernel(argv[++i]); continue; }
         if (!strcmp(a, "--gridmap") && i + 1 < argc) { map = strcmp(argv[++i], "nodeaware") ? MAP_LINEAR : MAP_NODEAWARE; continue; }
         if (!strcmp(a, "--plan"))        { do_plan = 1; continue; }
         if (!strcmp(a, "--plan-report")) { do_planreport = 1; continue; }
