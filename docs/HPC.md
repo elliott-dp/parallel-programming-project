@@ -56,6 +56,39 @@ make
 Editing files, `git` operations and `make` alone are ordinary interactive use. Running the
 binary — even at one rank — is a job, so keep it inside an allocation.
 
+## 2b. Survey the cluster before you size anything
+
+`pbsnodes` and `qstat` are read-only scheduler queries. They run nothing on a compute node, so
+they are not "jobs" and are fine on the head node — that is what it is for.
+
+```bash
+./scripts/cluster_probe.sh | tee results/cluster_survey.txt
+```
+
+It answers the three things you need before submitting:
+
+| question | why it matters |
+|---|---|
+| which queues, and their walltime / size limits | `strong.pbs` asks for 2 h and 128 cores; if `short_cpuQ` caps below that, the job never starts |
+| how many nodes, at what cores and memory | decides the `#PBS -l select=` you can actually get |
+| which nodes are on Omni-Path vs 10 GbE | a sweep split across both fabrics is not a valid comparison |
+
+The individual commands, if you would rather run them by hand:
+
+```bash
+qstat -Q                      # queues
+qstat -Qf short_cpuQ          # that queue's limits
+pbsnodes -aSj                 # one line per node: state, cores used/total, jobs
+pbsnodes -a | less            # everything, including each node's resources
+qstat -u $USER                # your own jobs
+```
+
+**What you cannot do:** `ssh` to a worker node (policy 6.2), or run `./gemm2d` / `mpirun` on
+the head node (also 6.2). Looking at the nodes is fine; reaching them outside PBS is not.
+
+If the probe shows a fabric tag, pin it in the select statement so every run of a sweep lands
+on the same interconnect, and keep it identical across `strong.pbs` and `shm_ablation.pbs`.
+
 ## 3. Submit
 
 **Submit `jobs/smoke.pbs` first and let it finish.** The other six refuse to start unless
