@@ -1,5 +1,10 @@
 # Project status vs. the architecture guide
 
+> **Updated 2026-09-07, later the same day.** The sections below are the original
+> assessment, kept as written. Several of the gaps it identifies have since been
+> closed — see **[What changed since this assessment](#what-changed-since-this-assessment)**
+> at the end for the current position. Where the two disagree, that section is current.
+
 Assessment of `gemm2d.tar.gz` against `distributed-gemm-2d-architecture-guide.md`.
 Date: 2026-09-07.
 
@@ -224,3 +229,96 @@ has to be redone on the cluster with proper binding.
    include-template trick is about a day's work. If no, say so explicitly in the report —
    the README currently redefines the third genericity axis as "arbitrary decomposition",
    which is not the guide's G3, and a reader comparing the two will notice.
+
+
+---
+
+# What changed since this assessment
+
+Work done after the audit above, in commit order. Test suite is now **43/43** (was 36/36).
+
+## Blockers 1 and 2 — closed
+
+The source tree is committed at the repository root, matching the structure guide §12
+prescribes; `gemm2d.tar.gz` is gone (git history retains it). `.gitignore` no longer excludes
+`results/*.csv` and `plots/*.png`, so the evidence can be committed as §12 requires.
+
+## The kernel — closed, and it changed the regime
+
+A third local kernel, `--kernel packed`, is now the default: packed A and B panels plus an 8×8
+register tile, with zero-padded micro-panels so there is no edge-case code in the hot loop.
+Measured on one rank, one thread, `M=N=1024`, `K=256`:
+
+| kernel | Gflop/s |
+|---|---|
+| `naive` | 8.3 |
+| `blocked` | 10.0 — the previous default |
+| `packed` | **32.1** |
+
+End to end at `P=4` on 1024³: 10.1 → 39.8 Gflop/s. `naive` and `blocked` stay selectable, so
+this is experiment E1 rather than a deleted branch. Checked under
+`-fsanitize=address,undefined` across every engine, all three kernels, prime rank counts,
+empty local blocks and `b > K`: no overflow, no undefined behaviour.
+
+The week-2 exit criterion (≥40% of BLAS) still cannot be *checked* — there is no BLAS reference
+in-tree, pending the instructor's answer to §17 Q1 — but 32 Gflop/s on a 2.8 GHz core is roughly
+35–70% of its FMA peak depending on the number of FMA units, so it is now plausibly met rather
+than plainly missed.
+
+Two corrections to the assessment above:
+* The `if (a == 0.0) continue` branch measures as free. It is not a vectorisation blocker; the
+  gain came from packing and register blocking.
+* The "no OpenMP speedup" reading was an artefact of running under `mpirun` without binding on a
+  4-core box. In an isolated harness the kernel threads about 3.6× on 4 cores.
+
+Separately, `-std=c11` disables FMA contraction in GCC, which was costing about 20% on its own.
+`-ffp-contract=fast` is now in the default flags and documented in the README.
+
+## Defects 1, 2, 3, 4, 6, 7 — fixed
+
+The CSV `err` column now carries the measured residual (rows are buffered and written after
+verification). `naive1d` honours `--beta` in both the engine and its reference check. The three
+job scripts that ran configurations back-to-back now interleave them; `strong.pbs` has a
+realistic walltime and states its baseline. `--plan` and `--plan --calibrate` have regression
+coverage. Dead code and the unused-parameter warning are gone.
+
+**One new defect found and fixed:** `machine_calibrate()` hardcoded `KRN_BLOCKED`, so
+`--calibrate` measured a kernel the run does not use — it reported `gamma` = 9.7 Gflop/s while
+the code ran at 32, and the planner then optimised against a machine three times slower than the
+real one. It now takes the kernel as a parameter and calibrates at a panel-shaped block.
+
+## Defect 5 — documented, not fixed
+
+`wire_gb` is still a model rather than an instrument reading, and the `shm` branch still uses a
+different rule from the others. The README now says so plainly and says what to do about it in a
+figure caption. Fixing it properly needs a real counter.
+
+## Experiment coverage — 10 of 10 now have a route to a figure
+
+`jobs/weak.pbs` (E4) and `jobs/hybrid.pbs` (E10) are new. `scripts/plot_results.py` gained five
+plot kinds: `kernel`, `engines`, `bsweep`, `weak`, `hybrid`. `docs/EXPERIMENTS.md` is the plan,
+split so nothing is blocked on the queue: `scripts/run_local.sh` runs E1, E5, E7, E2a, E8a and
+the §10.4 consistency check on one machine in a few minutes.
+
+## Evidence — no longer zero
+
+First CSVs are committed in `results/`, with three figures in `plots/`:
+
+* **E1** kernel ablation — clean and reproducible, the figure to trust from the local half.
+* **E7** panel width — communication time falls 0.42 s → 0.028 s as `b` goes 16 → 512, which is
+  the latency term scaling as `1/b` that the cost model predicts, with the bandwidth term flat.
+  This is a direct confirmation of the model, and it closes part of the week-3 criterion.
+* **E5** engine comparison — intervals are wide because four ranks contend for four cores; the
+  cluster run is the one to trust.
+* **§10.4** cross-configuration residuals, 8.7e-16 to 1.1e-15 across engine, `c` and `b`.
+* **E2a** intra-node `alpha` = 1.35 µs, `beta` = 4.2 GB/s, `gamma` = 27.6 Gflop/s.
+
+## Still open
+
+* The cluster campaign (E3, E4, E6, E8b, E9, E10) — jobs are ready, nothing submitted.
+* Overlap efficiency `eta` (§7.1) is still not computed anywhere.
+* Measured-vs-model on the same axes (§9) — the `b` sweep is the first half of it.
+* MPI-4 persistent collectives (§7.2), G3 type genericity (§7.4), the network roofline, and the
+  BLAS reference line.
+* The report and the slides.
+* Both §17 questions to the instructor are still unanswered.
