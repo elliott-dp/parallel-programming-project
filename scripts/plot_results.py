@@ -27,6 +27,14 @@ except ImportError:
     HAVE_PLT = False
 
 
+# The bootstrap resamples, so an unseeded run redraws slightly different
+# whiskers every time and the figures are not bit-reproducible. The point of
+# regenerating figures from the CSVs is that the same data gives the same
+# picture, so fix the seed. Override with GEMM2D_PLOT_SEED to check that a
+# conclusion is not an artefact of one particular resampling.
+random.seed(int(os.environ.get("GEMM2D_PLOT_SEED", "20260907")))
+
+
 def boot_ci(xs, n=2000, lo=2.5, hi=97.5):
     """Percentile bootstrap CI of the median -- no normality assumed."""
     if len(xs) < 2:
