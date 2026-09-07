@@ -2,7 +2,7 @@
 #PBS -N gemm2d_hybrid
 #PBS -o results/hybrid.out
 #PBS -e results/hybrid.err
-#PBS -q short_cpuQ
+#PBS -q shortCPUQ
 #PBS -l walltime=1:00:00
 #PBS -l select=4:ncpus=32:mpiprocs=32:mem=64gb
 #PBS -l place=scatter:excl
@@ -21,7 +21,7 @@ EXPECT_NODES=4
 
 # Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one
 # would delete the binary another is executing. Build once, before submitting:
-#     qsub -I -l select=1:ncpus=4 -q short_cpuQ   # then: . jobs/env.sh && make
+#     qsub -I -l select=1:ncpus=4 -q shortCPUQ   # then: . jobs/env.sh && make
 [ -x ./gemm2d ] || { echo "ERROR: ./gemm2d not built. See docs/HPC.md step 2."; exit 1; }
 export OMP_PROC_BIND=close OMP_PLACES=cores
 

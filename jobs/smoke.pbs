@@ -2,7 +2,7 @@
 #PBS -N gemm2d_smoke
 #PBS -o results/smoke.out
 #PBS -e results/smoke.err
-#PBS -q short_cpuQ
+#PBS -q shortCPUQ
 #PBS -l walltime=0:20:00
 #PBS -l select=1:ncpus=9:mpiprocs=9:mem=8gb
 #PBS -l place=scatter:excl

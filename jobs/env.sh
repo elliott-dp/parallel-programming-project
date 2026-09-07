@@ -14,13 +14,23 @@ set -u
 
 _have_module() { command -v module >/dev/null 2>&1 || [ -n "${MODULESHOME:-}" ]; }
 
+# Defaults for the UniTN cluster (EasyBuild module tree). OpenMPI 4.1.6 is
+# chosen because it is the version the code was verified against; the toolchain
+# module pulls in its matching GCC automatically. OpenMPI/5.0.3-GCC-13.3.0 is
+# also available and gives MPI-4 -- switch with MPI_MODULE= if you want it.
+: "${MPI_MODULE:=OpenMPI/4.1.6-GCC-13.2.0}"
+: "${GCC_MODULE:=GCC/13.2.0}"
+
 if _have_module; then
-    module load "${GCC_MODULE:-gcc91}" 2>/dev/null \
-        || echo "note: could not load ${GCC_MODULE:-gcc91}; using the default compiler"
+    module load "$GCC_MODULE" 2>/dev/null \
+        || echo "note: could not load $GCC_MODULE; relying on the MPI toolchain"
 
     if [ -n "${MPI_MODULE:-}" ]; then
-        module load "$MPI_MODULE" || { echo "ERROR: MPI_MODULE=$MPI_MODULE failed to load"; exit 1; }
-    elif ! command -v mpicc >/dev/null 2>&1; then
+        module load "$MPI_MODULE" 2>/dev/null \
+            || echo "note: $MPI_MODULE not available here; falling back to discovery"
+    fi
+
+    if ! command -v mpicc >/dev/null 2>&1; then
         # Prefer an MPI built against the same gcc, then any MPI at all.
         _av=$(module avail 2>&1 | tr ' ' '\n' | grep -iE '^(openmpi|mpich|mvapich|intel-mpi|impi)' | grep -v '^$')
         _pick=$(printf '%s\n' "$_av" | grep -i "gcc" | head -1)
