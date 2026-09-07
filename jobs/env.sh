@@ -12,7 +12,20 @@
 
 set -u
 
-_have_module() { command -v module >/dev/null 2>&1 || [ -n "${MODULESHOME:-}" ]; }
+# `module` is a shell function, and a PBS batch shell does not always inherit
+# it. Source the init script if it is missing, trying both Lmod and the classic
+# environment-modules locations, before deciding it is unavailable.
+if ! command -v module >/dev/null 2>&1; then
+    for _init in /usr/share/lmod/lmod/init/bash \
+                 /usr/share/Modules/init/bash \
+                 /etc/profile.d/modules.sh \
+                 /etc/profile.d/lmod.sh \
+                 "${MODULESHOME:-/nonexistent}/init/bash"; do
+        [ -r "$_init" ] && . "$_init" 2>/dev/null && break
+    done
+fi
+
+_have_module() { command -v module >/dev/null 2>&1; }
 
 # Defaults for the UniTN cluster (EasyBuild module tree). OpenMPI 4.1.6 is
 # chosen because it is the version the code was verified against; the toolchain
