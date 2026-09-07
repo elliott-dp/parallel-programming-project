@@ -28,22 +28,40 @@ rsync -av --exclude '.git' --exclude '*.o' --exclude gemm2d \
     ./ <username>@<cluster-login-host>:~/gemm2d/
 ```
 
-## 2. Build and smoke-test on a login node
+## 2. Build and smoke-test — NOT on the head node
+
+**Cluster policy 6.2 forbids executing any job on the head nodes** (`hpc-head-n1`,
+`hpc-head-n2`), and the test suite launches MPI ranks. So compile and test inside an
+allocation, not on the login shell.
+
+Either as a batch job:
 
 ```bash
+qsub jobs/smoke.pbs           # builds, then runs the 43-case suite
+qstat -u $USER                # wait for it
+cat results/smoke.out         # every line must say [OK]
+```
+
+or interactively:
+
+```bash
+qsub -I -l select=1:ncpus=9:mpiprocs=9:mem=8gb -q short_cpuQ -l walltime=0:20:00
+# once the shell lands on a compute node:
+cd parallel-programming-project
+. jobs/env.sh                 # loads gcc + MPI, or tells you the exact module to name
 make
-./tests/run_tests.sh          # 43 cases, all must print [OK]
+./tests/run_tests.sh
 ```
 
-If `make` cannot find `mpicc`, the module is not loaded in your interactive shell. The job
-scripts handle this themselves (see below), but for the interactive test:
-
-```bash
-module avail                   # find the MPI module's exact name
-module load gcc91 <that-name>
-```
+Editing files, `git` operations and `make` alone are ordinary interactive use. Running the
+binary — even at one rank — is a job, so keep it inside an allocation.
 
 ## 3. Submit
+
+**Submit `jobs/smoke.pbs` first and let it finish.** The other six refuse to start unless
+`./gemm2d` already exists, and that is deliberate: they all share `$PBS_O_WORKDIR`, so if each
+one rebuilt, a `make clean` in one job would delete the binary another job is executing. Build
+once; then the six can run concurrently.
 
 The module name is discovered automatically by `jobs/env.sh`, which every job script sources.
 If the guess is wrong the job stops immediately with the exact command to fix it, rather than
@@ -64,7 +82,15 @@ Override the module names if the autodetection picks wrong:
 MPI_MODULE=mpich-3.2.1--gcc-9.1.0 qsub jobs/strong.pbs
 ```
 
-Watch them with `qstat -u $USER`. Each job writes `results/<name>.out` and `.err`.
+Watch them with `qstat -u $USER`. Each job writes `results/<name>.out` and `.err`, plus a
+`results/<name>.<jobid>.nodes` file listing the nodes it actually landed on.
+
+**Check those `.nodes` files before comparing runs.** The cluster interconnects some nodes at
+10 Gb/s Ethernet and others with Omni-Path. A strong-scaling curve or a broadcast-policy
+ablation assembled from runs that landed on different fabrics is not a valid comparison — the
+independent variable would be the network, not the thing you varied. Guide §11 asks for node
+IDs to be noted for exactly this reason. If the sets differ, either resubmit to get a
+consistent allocation or report the split honestly.
 
 **Adjust `#PBS -l select=...` to match your queue.** The scripts ask for
 `4:ncpus=32:mpiprocs=32:mem=64gb` (128 cores). If `short_cpuQ` gives you less, lower the rank
@@ -96,6 +122,22 @@ the raw CSVs to be committed as the report's evidence.
 ```bash
 git add results plots && git commit -m "Cluster campaign results" && git push
 ```
+
+## Cluster policy notes
+
+Points from the usage regulations that touch this project:
+
+* **6.2 — no jobs on head nodes.** Handled above: the smoke test is a job, not a login-shell
+  command. Do not run `./gemm2d` or `mpirun` on `hpc-head-n1` / `hpc-head-n2`.
+* **6.2 — no `ssh` to compute nodes.** Nothing here does that. Use `qsub -I` for an
+  interactive session.
+* **6.3 — job names must not identify a person.** The names are `gemm2d_strong`,
+  `gemm2d_weak`, `gemm2d_shapes`, `gemm2d_csweep`, `gemm2d_shm`, `gemm2d_hybrid`,
+  `gemm2d_smoke`. All fine — do not rename them to anything containing your name or ID.
+* **2.2 — 250 GB home quota.** This project's footprint is negligible: source, a handful of
+  CSVs and a few PNGs, well under 100 MB. The large numbers in the jobs (`n = 23170` at
+  `P = 128` in the weak-scaling sweep) are RAM per node, not disk.
+* **6.1 — teaching and research only.** This is coursework, which qualifies.
 
 ---
 

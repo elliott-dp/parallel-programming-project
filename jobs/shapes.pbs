@@ -11,7 +11,10 @@
 cd "$PBS_O_WORKDIR" || exit 1
 . jobs/env.sh
 
-make clean && make || exit 1
+# Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one
+# would delete the binary another is executing. Build once, before submitting:
+#     qsub -I -l select=1:ncpus=4 -q short_cpuQ   # then: . jobs/env.sh && make
+[ -x ./gemm2d ] || { echo "ERROR: ./gemm2d not built. See docs/HPC.md step 2."; exit 1; }
 export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 NP=64
 

@@ -1,0 +1,20 @@
+#!/bin/bash
+#PBS -N gemm2d_smoke
+#PBS -o results/smoke.out
+#PBS -e results/smoke.err
+#PBS -q short_cpuQ
+#PBS -l walltime=0:20:00
+#PBS -l select=1:ncpus=9:mpiprocs=9:mem=8gb
+
+# Build and run the correctness suite. Cluster policy 6.2 forbids executing any
+# job on the head nodes, and the suite launches MPI ranks -- so it runs here, as
+# a batch job, not on a login node.
+#
+# Submit this FIRST and wait for it. The other six jobs refuse to start without
+# a built ./gemm2d, deliberately: they must not build concurrently in a shared
+# directory.
+cd "$PBS_O_WORKDIR" || exit 1
+. jobs/env.sh
+
+make clean && make || exit 1
+./tests/run_tests.sh

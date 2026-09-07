@@ -42,3 +42,17 @@ fi
 echo "# toolchain: $(mpicc -show 2>/dev/null | head -1)"
 echo "# mpicc:     $(command -v mpicc)"
 mpicc --version 2>/dev/null | head -1
+
+# --- provenance -----------------------------------------------------------
+# This cluster interconnects some nodes with 10 GbE and others with Omni-Path.
+# A comparison across runs that landed on different fabrics is meaningless, so
+# record what each job actually got. Guide S11 asks for node IDs to be noted.
+if [ -n "${PBS_NODEFILE:-}" ] && [ -r "$PBS_NODEFILE" ]; then
+    _tag="${PBS_JOBNAME:-job}.${PBS_JOBID:-nojobid}"
+    mkdir -p results
+    { echo "# jobid=${PBS_JOBID:-?} name=${PBS_JOBNAME:-?} queue=${PBS_QUEUE:-?}"
+      echo "# unique nodes:"; sort -u "$PBS_NODEFILE"
+      echo "# slots: $(wc -l < "$PBS_NODEFILE")"
+    } > "results/${_tag}.nodes"
+    echo "# nodes recorded in results/${_tag}.nodes"
+fi
