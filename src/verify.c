@@ -107,7 +107,7 @@ double verify_freivalds(const pgrid_t *g, const dmat_t *A, const dmat_t *B,
     int *disp = (int *)malloc((size_t)g->Pr * sizeof(int));
     scalar_t *z = (scalar_t *)calloc((size_t)(Klen ? Klen : 1), sizeof(scalar_t));
     scalar_t *zp, *w, *u;
-    (void)M; (void)Koff;
+    (void)M; (void)K; (void)Koff;
 
     for (i = 0; i < g->Pr; i++) {
         cnts[i] = blk_size(Klen, g->Pr, i);

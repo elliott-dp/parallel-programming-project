@@ -87,8 +87,16 @@ time_s,gflops,wire_gb,rank_gb,t_comm,t_comp,err
 ```
 
 `time_s` is the **maximum over ranks** of the elapsed time between two barriers — the slowest rank
-defines the runtime. `wire_gb` is modelled panel traffic crossing a node boundary, computed the same
-way for every policy so the ablation is apples-to-apples.
+defines the runtime. `err` is the residual from `--verify` (`-1` when verification is off); it is
+written after verification runs, so every row of a run carries the same measured value.
+
+`wire_gb` is a **model, not an instrument reading**, and the two branches do not use the same rule:
+for `blocking` and `ibcast` the full panel is charged to every off-node receiver, whereas for `shm`
+it is charged only to off-node leaders. That is the mechanism the shared-memory path exists to
+exploit, so the metric is fair to the *design* but it is not a measurement of wire traffic — a real
+Open MPI broadcast is often already node-aware, which means the `blocking` baseline is likely
+over-charged. Treat `wire_gb` as "panel bytes the policy asks the network for" and say so in any
+figure caption; validate against a real counter before claiming a bandwidth saving.
 
 ## Test
 

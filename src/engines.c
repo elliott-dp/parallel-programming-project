@@ -247,6 +247,12 @@ int gemm_naive1d(MPI_Comm comm, int M, int N, int K, const gemm_opts_t *o,
         for (t = 0; t < K; t++) Aloc[(size_t)i * K + t] = gen_elem(seed, r0 + i, t);
     for (i = 0; i < k; i++)
         for (j = 0; j < N; j++) Bloc[(size_t)i * N + j] = gen_elem(seed + 1, k0 + i, j);
+    /* C starts at beta*C0, matching the 2D path, so --beta is honoured here
+     * too instead of being silently dropped. */
+    if (o->beta != (scalar_t)0.0)
+        for (i = 0; i < m; i++)
+            for (j = 0; j < N; j++)
+                Cloc[(size_t)i * N + j] = o->beta * gen_elem(seed + 2, r0 + i, j);
 
     cnts = (int *)malloc((size_t)P * sizeof(int));
     disp = (int *)malloc((size_t)P * sizeof(int));
@@ -271,8 +277,7 @@ int gemm_naive1d(MPI_Comm comm, int M, int N, int K, const gemm_opts_t *o,
                 double acc = 0.0;
                 for (t = 0; t < K; t++)
                     acc += gen_elem(seed, r0 + i, t) * gen_elem(seed + 1, t, j);
-                acc *= o->alpha;
-                ref = acc;
+                ref = o->alpha * acc + o->beta * gen_elem(seed + 2, r0 + i, j);
                 loc = Cloc[(size_t)i * N + j];
                 num += (loc - ref) * (loc - ref);
                 den += ref * ref;

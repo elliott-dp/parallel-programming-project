@@ -18,10 +18,11 @@ export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 
 N=8192
 NP=128
-for MAP in linear nodeaware; do
-  for POLICY in "blocking 0" "ibcast 0" "ibcast 1" "shm 0"; do
-    set -- $POLICY
-    for REP in $(seq 1 10); do
+# REP outer: interleave the policies across the queue (see strong.pbs).
+for REP in $(seq 1 10); do
+  for MAP in linear nodeaware; do
+    for POLICY in "blocking 0" "ibcast 0" "ibcast 1" "shm 0"; do
+      set -- $POLICY
       mpiexec -n $NP --map-by core --bind-to core \
         ./gemm2d --M $N --N $N --K $N --engine summa --b 256 \
                  --bcast "$1" --lookahead "$2" --gridmap $MAP \

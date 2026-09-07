@@ -57,6 +57,19 @@ static verify_t parse_verify(const char *s)
     return VER_NONE;
 }
 
+/* Open the CSV and write the header if the file is new. */
+static FILE *csv_open(const char *path)
+{
+    FILE *f = fopen(path, "a");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    if (!ftell(f))
+        fprintf(f, "tag,engine,bcast,kernel,gridmap,plan,M,N,K,P,Pr,Pc,c,b,"
+                   "threads,lookahead,rep,time_s,gflops,wire_gb,rank_gb,"
+                   "t_comm,t_comp,err\n");
+    return f;
+}
+
 int main(int argc, char **argv)
 {
     int P, wrank, i;
@@ -80,6 +93,11 @@ int main(int argc, char **argv)
     double err = -1.0, best_t = 0.0;
     scalar_t *v0 = NULL;
     int threads = 1, mapfallback = 0;
+    /* One buffered row per timed repetition. The CSV is written only after
+     * verification has run, so the err column carries the measured residual
+     * instead of the -1 placeholder. */
+    struct { double t, gf, wire, rank, comm, comp; } *rows = NULL;
+    FILE *cf = NULL;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &P);
@@ -146,7 +164,8 @@ int main(int argc, char **argv)
     if (eng == ENG_NAIVE1D) {
         int rep;
         o.engine = eng; o.bcast = bc; o.kernel = krn; o.b = b; o.c = 1;
-        o.lookahead = 0; o.alpha = alpha; o.beta = 0.0;
+        o.lookahead = 0; o.alpha = alpha; o.beta = beta;
+        rows = calloc((size_t)(reps > 0 ? reps : 1), sizeof(*rows));
         for (rep = -warmup; rep < reps; rep++) {
             double t0, t1, tmax, e = -1.0;
             counters_reset();
@@ -162,25 +181,24 @@ int main(int argc, char **argv)
             if (rep == reps - 1) err = e;
             if (rep >= 0 && !wrank) {
                 double gf = 2.0 * M * N * K / (tmax * 1e9);
+                rows[rep].t = tmax; rows[rep].gf = gf;
                 if (!quiet)
                     printf("naive1d P=%d rep=%d t=%.6f s  %.2f Gflop/s\n",
                            P, rep, tmax, gf);
-                if (csv) {
-                    FILE *f = fopen(csv, "a");
-                    if (f) {
-                        fseek(f, 0, SEEK_END);
-                        if (!ftell(f))
-                            fprintf(f, "tag,engine,bcast,kernel,gridmap,plan,M,N,K,P,Pr,Pc,c,b,threads,lookahead,rep,time_s,gflops,wire_gb,rank_gb,t_comm,t_comp,err\n");
-                        fprintf(f, "%s,naive1d,-,%s,-,0,%d,%d,%d,%d,%d,1,1,0,%d,0,%d,%.6f,%.3f,0,0,0,0,%.3e\n",
-                                tag, kernel_name(krn), M, N, K, P, P, threads, rep, tmax, gf, err);
-                        fclose(f);
-                    }
-                }
             }
         }
         if (!wrank && ver != VER_NONE)
             printf("verify(reference): relative error = %.3e  [%s]\n",
                    err, (err >= 0 && err < 1e-10) ? "OK" : (err < 0 ? "skipped" : "FAIL"));
+        if (csv && !wrank && (cf = csv_open(csv)) != NULL) {
+            for (rep = 0; rep < reps; rep++)
+                fprintf(cf, "%s,naive1d,-,%s,-,0,%d,%d,%d,%d,%d,1,1,0,%d,0,%d,"
+                            "%.6f,%.3f,0,0,0,0,%.3e\n",
+                        tag, kernel_name(krn), M, N, K, P, P, threads, rep,
+                        rows[rep].t, rows[rep].gf, err);
+            fclose(cf);
+        }
+        free(rows);
         MPI_Finalize();
         return 0;
     }
@@ -253,6 +271,8 @@ int main(int argc, char **argv)
     }
 
     /* ---------------- timed repetitions ------------------------------ */
+    rows = calloc((size_t)(reps > 0 ? reps : 1), sizeof(*rows));
+    if (!rows) { MPI_Finalize(); return 2; }
     for (i = -warmup; i < reps; i++) {
         double t0, t1, tmax, cw[2], cwmax[2], bs[2], bsum[2];
         int rc;
@@ -297,20 +317,9 @@ int main(int argc, char **argv)
                        "  comm=%.4f comp=%.4f  offnode=%.3f GB\n",
                        engine_name(eng), bcast_name(bc), P, Pr, Pc, c, b, i,
                        tmax, gf, cwmax[0], cwmax[1], bsum[0] / 1e9);
-            if (csv) {
-                FILE *f = fopen(csv, "a");
-                if (f) {
-                    fseek(f, 0, SEEK_END);
-                    if (!ftell(f))
-                        fprintf(f, "tag,engine,bcast,kernel,gridmap,plan,M,N,K,P,Pr,Pc,c,b,threads,lookahead,rep,time_s,gflops,wire_gb,rank_gb,t_comm,t_comp,err\n");
-                    fprintf(f, "%s,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.6f,%.3f,%.6f,%.6f,%.6f,%.6f,%.3e\n",
-                            tag, engine_name(eng), bcast_name(bc), kernel_name(krn),
-                            gridmap_name(g.map), do_plan, M, N, K, P, Pr, Pc, c, b,
-                            threads, lookahead, i, tmax, gf,
-                            bsum[0] / 1e9, bsum[1] / 1e9, cwmax[0], cwmax[1], err);
-                    fclose(f);
-                }
-            }
+            rows[i].t = tmax; rows[i].gf = gf;
+            rows[i].wire = bsum[0] / 1e9; rows[i].rank = bsum[1] / 1e9;
+            rows[i].comm = cwmax[0];      rows[i].comp = cwmax[1];
         }
     }
 
@@ -331,10 +340,22 @@ int main(int argc, char **argv)
                    err < 1e-10 ? "OK" : "FAIL");
     }
 
+    if (csv && !wrank && (cf = csv_open(csv)) != NULL) {
+        for (i = 0; i < reps; i++)
+            fprintf(cf, "%s,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+                        "%.6f,%.3f,%.6f,%.6f,%.6f,%.6f,%.3e\n",
+                    tag, engine_name(eng), bcast_name(bc), kernel_name(krn),
+                    gridmap_name(g.map), do_plan, M, N, K, P, Pr, Pc, c, b,
+                    threads, lookahead, i, rows[i].t, rows[i].gf,
+                    rows[i].wire, rows[i].rank, rows[i].comm, rows[i].comp, err);
+        fclose(cf);
+    }
+
     if (!wrank && !quiet)
         printf("# nodes=%d ranks/node=%d threads=%d best=%.6f s\n",
                g.n_nodes, g.node_size, threads, best_t);
 
+    free(rows);
     free(v0);
     dmat_free(&A); dmat_free(&B); dmat_free(&Cm);
     pgrid_free(&g);

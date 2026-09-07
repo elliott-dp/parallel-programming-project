@@ -79,6 +79,14 @@ run "freivalds beta!=0"    -n 4 $BIN --M 400 --N 380 --K 360 --b 32 --alpha 1.5 
 echo "== naive kernel path =="
 run "kernel=naive"         -n 4 $BIN --M 61 --N 53 --K 47 --kernel naive --b 8 --verify ref --reps 1 --warmup 0 --quiet
 
+echo "== planner (the originality claim -- was previously untested) =="
+run "--plan"               -n 8 $BIN --M 61 --N 53 --K 47 --engine summa25d --plan --verify ref --reps 1 --warmup 0 --quiet
+run "--plan --calibrate"   -n 8 $BIN --M 90 --N 80 --K 300 --engine summa25d --plan --calibrate --verify freivalds --trials 3 --reps 1 --warmup 0 --quiet
+run "--plan on summa"      -n 4 $BIN --M 61 --N 53 --K 47 --engine summa --plan --verify ref --reps 1 --warmup 0 --quiet
+
+echo "== naive1d honours alpha/beta =="
+run "naive1d alpha/beta"   -n 4 $BIN --M 40 --N 36 --K 28 --engine naive1d --alpha 1.5 --beta -2.0 --verify ref --reps 1 --warmup 0 --quiet
+
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ]

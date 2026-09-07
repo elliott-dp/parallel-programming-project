@@ -15,8 +15,9 @@ export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
 
 N=8192
 NP=64
-for C in 1 2 4 8 16; do
-  for REP in $(seq 1 10); do
+# REP outer: interleave the c values across the queue (see strong.pbs).
+for REP in $(seq 1 10); do
+  for C in 1 2 4 8 16; do
     mpiexec -n $NP ./gemm2d --M $N --N $N --K $N --engine summa25d --c $C \
         --b 256 --reps 1 --warmup 1 --quiet \
         --tag csweep --csv results/csweep.csv

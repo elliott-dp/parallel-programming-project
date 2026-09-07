@@ -73,12 +73,9 @@ def kind_strong(rows):
     g = group(rows, ["P"])
     Ps = sorted(int(k[0]) for k in g)
     med = {p: summarize(g[(str(p),)]) for p in Ps}
-    base = med[Ps[0]]["median"] * Ps[0]
     print(f"{'P':>6} {'median[s]':>11} {'95% CI':>22} {'Gflop/s':>10} {'speedup':>9} {'eff':>7}")
     for p in Ps:
         m = med[p]
-        sp = med[Ps[0]]["median"] / m["median"] * Ps[0] / Ps[0]
-        sp = med[Ps[0]]["median"] * Ps[0] / (m["median"] * Ps[0]) * Ps[0]
         sp = med[Ps[0]]["median"] / m["median"]
         print(f"{p:>6} {m['median']:>11.5f} [{m['lo']:.5f},{m['hi']:.5f}] "
               f"{m['gflops']:>10.1f} {sp:>9.2f} {sp/(p/Ps[0]):>7.2f}")
