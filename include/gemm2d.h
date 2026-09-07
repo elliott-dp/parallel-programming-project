@@ -208,7 +208,7 @@ typedef struct {
 } plan_t;
 
 void machine_defaults(machine_t *mm);
-void machine_calibrate(MPI_Comm comm, machine_t *mm, int verbose);
+void machine_calibrate(MPI_Comm comm, machine_t *mm, kernel_t krn, int verbose);
 double plan_cost(const machine_t *mm, int M, int N, int K, int P,
                  int Pr, int Pc, int c, int b, double *t_comm, double *t_comp);
 int  plan_choose(const machine_t *mm, int M, int N, int K, int P,

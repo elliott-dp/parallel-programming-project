@@ -41,6 +41,13 @@ python3 scripts/plot_results.py results/engines.csv --kind engines
 python3 scripts/plot_results.py results/bsweep.csv  --kind bsweep
 ```
 
+**Watch the confidence intervals.** On a contended or oversubscribed box, `E5` and `E7` produce
+wide intervals — running `P` ranks on `P` cores while the OS and everything else compete gives
+medians whose CI spans a factor of several. `E1` is immune (one rank, one process) and is therefore
+the figure to trust from Half A. If `E5`'s intervals overlap, say so and lean on the cluster run
+instead of presenting a ranking the data does not support. Reporting the interval and declining to
+rank is a better answer than a bar chart that implies a difference which is not there.
+
 **What Half A cannot tell you:** anything about the network. `shm` versus `blocking` is
 meaningless here (the README says so), strong scaling past one node is not measurable, and
 `beta` is intra-node only. Do not present single-machine numbers as scaling results.

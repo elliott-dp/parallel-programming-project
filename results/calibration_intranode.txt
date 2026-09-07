@@ -1,0 +1,1 @@
+# calibrated: alpha=1.349e-06 s  beta=2.382e-10 s/B (4.20 GB/s)  gamma=3.618e-11 s/flop (27.64 Gflop/s)

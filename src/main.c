@@ -146,7 +146,7 @@ int main(int argc, char **argv)
     threads = omp_get_max_threads();
 #endif
 
-    if (do_cal) machine_calibrate(MPI_COMM_WORLD, &mm, !wrank && !quiet);
+    if (do_cal) machine_calibrate(MPI_COMM_WORLD, &mm, krn, !wrank && !quiet);
 
     if (do_planreport) {
         plan_t best, top[5];

@@ -19,7 +19,7 @@ void machine_defaults(machine_t *mm)
 
 /* Ping-pong between the first and last rank (most likely on different
  * nodes) gives alpha and beta; a local kernel run gives gamma. */
-void machine_calibrate(MPI_Comm comm, machine_t *mm, int verbose)
+void machine_calibrate(MPI_Comm comm, machine_t *mm, kernel_t krn, int verbose)
 {
     int P, r, i, rep;
     const int nsz = 2;
@@ -57,9 +57,12 @@ void machine_calibrate(MPI_Comm comm, machine_t *mm, int verbose)
         }
     }
 
-    /* gamma: time a local rank-k update of a cache-resident block */
+    /* gamma: time a local rank-k update at the shape the engine really calls --
+     * a wide C block against a narrow panel, not a small square. Must use the
+     * SAME kernel the run will use, or the planner optimises against a machine
+     * that does not exist. */
     {
-        int m = 128, n = 128, k = 128;
+        int m = 512, n = 512, k = 128;
         scalar_t *A = (scalar_t *)calloc((size_t)m * k, sizeof(scalar_t));
         scalar_t *B = (scalar_t *)calloc((size_t)k * n, sizeof(scalar_t));
         scalar_t *C = (scalar_t *)calloc((size_t)m * n, sizeof(scalar_t));
@@ -67,9 +70,9 @@ void machine_calibrate(MPI_Comm comm, machine_t *mm, int verbose)
         for (i = 0; i < m * k; i++) A[i] = 1.0 / (i + 1);
         for (i = 0; i < k * n; i++) B[i] = 1.0 / (i + 2);
         t0 = MPI_Wtime();
-        for (rep = 0; rep < 20; rep++)
-            kernel_gemm_acc(m, n, k, 1.0, A, k, B, n, C, n, KRN_BLOCKED);
-        el = (MPI_Wtime() - t0) / 20.0;
+        for (rep = 0; rep < 5; rep++)
+            kernel_gemm_acc(m, n, k, 1.0, A, k, B, n, C, n, krn);
+        el = (MPI_Wtime() - t0) / 5.0;
         g_cnt.t_comp = save_comp;
         mm->gamma_flop = el / (2.0 * m * n * k);
         MPI_Allreduce(MPI_IN_PLACE, &mm->gamma_flop, 1, MPI_DOUBLE, MPI_MAX, comm);
