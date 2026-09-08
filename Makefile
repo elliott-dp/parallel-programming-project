@@ -28,7 +28,14 @@ $(BIN): $(OBJ)
 test: $(BIN)
 	./tests/run_tests.sh
 
-clean:
-	rm -f $(OBJ) $(BIN)
+# Node-level roofline roofs + an OpenBLAS ceiling for the kernel figure.
+# BLAS=1 links OpenBLAS; without it the library ceiling is simply omitted.
+BLASFLAGS := $(if $(BLAS),-DUSE_BLAS -lopenblas,)
+roofline: bench/roofline.c
+	$(CC) -O3 -march=native -funroll-loops -ffp-contract=fast \
+	    -o bench/roofline bench/roofline.c $(BLASFLAGS) -lm
 
-.PHONY: all clean test
+clean:
+	rm -f $(OBJ) $(BIN) bench/roofline
+
+.PHONY: all clean test roofline

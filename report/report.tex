@@ -18,18 +18,18 @@
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 
-\graphicspath{{../plots/}}
+\graphicspath{{figs/}{../plots/}}  % figs/ = self-contained copy
 
 \begin{document}
 
 \title{A Generic Distributed-Memory GEMM with a\\
        Cost-Model-Driven Decomposition Planner}
 
-\author{\IEEEauthorblockN{Giovanni Rebecchi}
+\author{\IEEEauthorblockN{Saif Edine Safi}
 \IEEEauthorblockA{Department of Information Engineering and Computer Science\\
 University of Trento, Italy\\
-Student ID: \texttt{<<<INSERT STUDENT ID>>>} \quad
-Email: \texttt{<<<INSERT UNITN EMAIL>>>}}}
+Student ID: \texttt{245473} \quad
+Email: \texttt{saifedine.safi@studenti.unitn.it}}}
 
 \maketitle
 
@@ -47,8 +47,9 @@ a memory budget. On five matrix shapes the planner beats a fixed near-square
 grid by up to $1.36\times$, discovering $k$-parallelism ($1\!\times\!1\!\times\!4$)
 for short-fat operands where a fixed 2D grid cannot. A packed,
 register-blocked local kernel reaches $30.6$~Gflop/s per core, $4.05\times$
-the naive kernel and $68\%$ of the estimated single-core FMA peak, which is
-what makes the communication terms visible at all. The cost model predicts
+the naive kernel and $46\%$ of single-threaded OpenBLAS \texttt{dgemm}, which is
+what makes the communication terms visible at all; a roofline places all three
+kernel variants firmly in the compute-bound regime. The cost model predicts
 measured runtime within $20\%$ for $b\ge64$. Correctness is checked by a
 43-case suite over prime process counts and non-divisible dimensions, and at
 scale by a distributed Freivalds test.
@@ -64,8 +65,10 @@ process grid selection
 General matrix--matrix multiplication (GEMM) is the kernel that dense linear
 algebra, and much of deep learning, ultimately reduces to. In a
 distributed-memory setting its cost is dominated not by arithmetic but by data
-movement, and the amount of data moved is decided almost entirely by how the
-operands are laid out across processes.
+movement~\cite{irony2004,ballard2011}, and the amount of data moved is decided
+almost entirely by how the operands are laid out across processes. Classical
+2D algorithms~\cite{cannon1969,summa1997} and their memory-replicating
+successors~\cite{solomonik2011} differ almost entirely in that layout.
 
 The word \emph{generic} in the project title is the whole problem. A
 demonstration implementation fixes $M=N=K$, requires $P$ to be a perfect square
@@ -291,13 +294,39 @@ not of the kernel.}
 
 \textbf{The local kernel decides what the rest can measure.}
 Fig.~\ref{fig:kernel} gives $7.55$, $9.83$ and $30.61$~Gflop/s for the naive,
-tiled and packed kernels at one thread. The packed kernel is $4.05\times$ the
-naive one and reaches roughly 68\% of the estimated single-core FMA peak
-($2.8\,\mathrm{GHz} \times 8 \times 2$). This matters beyond the headline
-number: at $9.8$~Gflop/s the model's compute term dominates communication by
-two orders of magnitude, so the planner would be ranking configurations on a
-fraction of a percent of predicted runtime. Fixing the kernel is a
-\emph{precondition} for the decomposition to be measurable at all.
+tiled and packed kernels at one thread. As an external reference we measured
+single-threaded OpenBLAS \texttt{dgemm} on the same shape at $66.3$~Gflop/s:
+the packed kernel is $4.05\times$ the naive one and reaches \textbf{46\% of
+OpenBLAS}. Since OpenBLAS exceeds the one-FMA-unit figure
+($2.8\,\text{GHz}\times8\times2 = 44.8$), the core must issue two FMAs per
+cycle, giving a theoretical peak of $89.6$~Gflop/s, of which our kernel reaches
+34\%. This matters beyond the headline number: at $9.8$~Gflop/s the model's
+compute term dominates communication by two orders of magnitude, so the planner
+would be ranking configurations on a fraction of a percent of predicted
+runtime. A fast kernel is a \emph{precondition} for the decomposition to be
+measurable at all.
+
+\textbf{The shortfall is vectorisation, not bandwidth.} Fig.~\ref{fig:roofline}
+places the three kernels on a node roofline. Measured STREAM triad bandwidth is
+$11.9$~GB/s, putting the ridge point at $5.6$~flop/byte, while this shape
+($M{=}N{=}1024$, $K{=}256$) has an arithmetic intensity of $25.6$~flop/byte
+against compulsory traffic. All three variants therefore sit well inside the
+compute-bound region, four times past the ridge: the distance from the naive
+kernel to the roof cannot be explained by memory traffic, and is attributable
+to instruction-level parallelism and vector utilisation in the inner loop.
+This is the quantitative form of the argument above, and it also bounds what
+further tuning could buy --- the remaining gap to OpenBLAS is $2.2\times$,
+not the order of magnitude a memory-bound reading would suggest.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.84\columnwidth]{roofline.png}
+\caption{Node roofline, single core. Arithmetic intensity is computed from
+\emph{compulsory} traffic --- no hardware counters were available on the
+measurement node --- so these are algorithmic bounds, not measured DRAM
+traffic. All variants lie far right of the ridge point.}
+\label{fig:roofline}
+\end{figure}
 
 \begin{figure}[t]
 \centering
@@ -309,18 +338,24 @@ The planner discovers $k$-parallelism for short-fat operands, where a fixed
 \end{figure}
 
 \textbf{The planner earns its place on skewed shapes.}
-Fig.~\ref{fig:shapes} compares the planner against a fixed $2\times2$ grid. On
-short-fat operands ($M{=}N{=}512$, $K{=}32768$) it selects
-$1\!\times\!1\!\times\!4$ --- pure $k$-parallelism --- and is $1.36\times$
-faster ($0.2277\to0.1669$~s). For $M \ll N$ it selects $1\!\times\!4\!\times\!1$
-($1.24\times$), for $M \gg N$ $4\!\times\!1\!\times\!1$ ($1.12\times$), and
-$2\!\times\!2\!\times\!1$ for tall-skinny ($1.06\times$), reproducing
-$P_r=\sqrt{PM/N}$ from data rather than from the formula. These are
-decompositions a fixed 2D grid cannot reach at all.
+Table~\ref{tab:shapes} compares the planner against a fixed $2\times2$ grid,
+with bootstrap intervals so that each claim can be checked rather than assumed.
+On short-fat operands it selects $1\!\times\!1\!\times\!4$ --- pure
+$k$-parallelism --- and is $1.36\times$ faster; for $M \ll N$ it selects
+$1\!\times\!4\!\times\!1$ ($1.24\times$) and for $M \gg N$
+$4\!\times\!1\!\times\!1$ ($1.12\times$), reproducing $P_r=\sqrt{PM/N}$ from
+data rather than from the formula. On these three the intervals are disjoint,
+so the gains are real. On tall-skinny the intervals \emph{overlap}
+($[0.0765,0.0826]$ against $[0.0749,0.0823]$) and we therefore claim no
+improvement there, only that the planner does no harm. Three significant wins
+out of five is the honest score, and the winning decompositions are ones a
+fixed 2D grid cannot express at all.
 
 \textbf{It also loses on the square case, and that is informative.}
 For $M{=}N{=}K$ the planner picks $1\!\times\!2\!\times\!2$ and is 5\% slower
-than the fixed grid. The cause is visible in the model itself: at this size the
+than the fixed grid; the intervals are disjoint ($[0.1299,0.1370]$ against
+$[0.1380,0.1457]$), so this is a real regression and not noise. The cause is
+visible in the model itself: at this size the
 communication term is $10.1$~ms against a $149.6$~ms compute term, so the
 planner is discriminating between configurations that differ by well under 1\%
 of predicted runtime --- below the model's own accuracy. A useful refinement
@@ -335,15 +370,31 @@ Evaluating~(\ref{eq:model}) at $P{=}4$, $n{=}2048$ against the measured medians
 gives ratios of $1.08$, $1.15$, $1.20$ and $1.16$ for $b = 64,128,256,512$ ---
 within 20\%, comfortably inside the $\pm30\%$ we set as the acceptance
 threshold. At $b{=}16$, however, the model \emph{under}-predicts by 35\%.
-Table~\ref{tab:bsweep} explains why. The model says only the latency term
-depends on $b$; the measured latency term is indeed negligible ($21\,\mu$s at
-$b{=}256$). What actually varies with $b$ is the \emph{compute} time, which
-falls from $224$~ms at $b{=}16$ to $119$~ms at $b{=}256$, because narrow panels
-mean short, inefficient kernel invocations. The textbook reading of $b$ as a
-pure latency knob is therefore wrong on this machine: $b$ is dominated by local
-kernel efficiency, and a model that omits that term mispredicts by a third.
-This is a concrete limitation of~(\ref{eq:model}) that our measurements
-expose.
+Table~\ref{tab:bsweep} explains why. The model attributes all $b$-dependence to
+latency, and the measured latency term is indeed negligible ($21\,\mu$s at
+$b{=}256$); what actually varies is \emph{compute} time, falling from $224$ to
+$119$~ms, because narrow panels mean short, inefficient kernel invocations.
+Reading $b$ as a pure latency knob is therefore wrong here: it is dominated by
+local kernel efficiency, and omitting that term costs a third.
+
+\begin{table}[t]
+\caption{Planner versus fixed $2\times2$ grid, $P{=}4$. Medians of 10 runs with
+percentile-bootstrap 95\% intervals. $^{\dagger}$intervals overlap: no
+significant difference.}
+\label{tab:shapes}
+\centering\small
+\begin{tabular}{lccr}
+\toprule
+shape & fixed [s] & planner [s] & speedup \\
+\midrule
+short-fat & 0.2277 \tiny[.2080,.2531] & 0.1669 \tiny[.1647,.1681] & \textbf{1.36}$\times$ \\
+wide-$B$  & 0.0859 \tiny[.0838,.0904] & 0.0695 \tiny[.0680,.0707] & \textbf{1.24}$\times$ \\
+tall-$A$  & 0.0791 \tiny[.0780,.0823] & 0.0708 \tiny[.0678,.0771] & \textbf{1.12}$\times$ \\
+tall-skinny & 0.0801 \tiny[.0765,.0826] & 0.0757 \tiny[.0749,.0823] & 1.06$^{\dagger}$ \\
+square    & 0.1344 \tiny[.1299,.1370] & 0.1411 \tiny[.1380,.1457] & 0.95$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{table}[t]
 \caption{Panel-width sweep, $P=4$, $n=2048$. The variation is in compute,
@@ -363,9 +414,11 @@ $b$ & total [s] & comm [s] & comp [s] \\
 \end{tabular}
 \end{table}
 
-\textbf{Scaling, engines and replication.} Within one node, strong scaling at
-$n{=}2048$ gives speedups $1.00/1.92/3.55$ at $P{=}1,2,4$ --- 89\% efficiency at
-four processes, $124.5$~Gflop/s. This is a \emph{shared-memory} result: it
+\textbf{Scaling, engines and replication.} Within one node at $n{=}2048$, the
+serial base case runs in $0.4892$~s $[0.4743,0.4996]$, i.e.\ $35.1$~Gflop/s;
+$P{=}2$ and $P{=}4$ give $0.2543$~s $[0.2517,0.2594]$ and $0.1378$~s
+$[0.1348,0.1408]$, so speedups $1.00/1.92/3.55$ --- 89\% efficiency at four
+processes and $124.5$~Gflop/s aggregate. This is a \emph{shared-memory} result: it
 validates the algorithms and the model but says nothing about network
 behaviour. Comparing engines at $P{=}4$, SUMMA reaches $120.1$ and 2.5D
 $117.3$~Gflop/s, while naive~1D reaches $95.4$ while moving $0.101$~GB per rank
@@ -405,9 +458,9 @@ We have shown that a distributed GEMM can be genuinely generic --- arbitrary
 $M,N,K$, arbitrary $P$ including primes, arbitrary grids --- without giving up
 performance, and that the process grid is worth choosing at run time rather
 than fixing by convention. A cost-model planner costing a few dozen lines
-recovers $1.06\times$--$1.36\times$ over a fixed near-square grid across skewed
-shapes, discovering decompositions such as $1\!\times\!1\!\times\!4$ that a
-fixed 2D grid cannot express. The model predicts measured runtime within 20\%
+recovers a significant $1.12\times$--$1.36\times$ over a fixed near-square grid
+on three of five shapes, discovering decompositions such as
+$1\!\times\!1\!\times\!4$ that a fixed 2D grid cannot express. The model predicts measured runtime within 20\%
 where the panel width is not pathologically small.
 
 The honest limitations are three. First, the planner regresses by 5\% on
@@ -424,8 +477,8 @@ magnitude.
 
 Future work: type genericity (G3) via an include-template over
 \texttt{float}/\texttt{double}, which would halve communication volume in the
-bandwidth-bound regime; MPI-4 persistent collectives as a third broadcast
-policy; a network roofline placing configurations by
+bandwidth-bound regime; MPI-4~\cite{mpi40} persistent collectives as a third
+broadcast policy; a network roofline placing configurations by
 $I_{\text{net}} = (2MNK/P)/\text{bytes}$; and a comparison against COSMA on the
 same shapes, which is the correct reference point for the planner claim.
 

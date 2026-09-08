@@ -14,6 +14,7 @@ mean for rates, no outlier removal.
     python3 scripts/plot_results.py results/bsweep.csv  --kind bsweep
     python3 scripts/plot_results.py results/weak.csv    --kind weak
     python3 scripts/plot_results.py results/hybrid.csv  --kind hybrid
+    python3 scripts/plot_results.py results/kernel.csv  --kind roofline
 """
 import argparse, csv, math, os, random, statistics as st
 from collections import defaultdict
@@ -184,6 +185,55 @@ def kind_shapes(rows):
         save(fig, "planner_shapes.png")
 
 
+def read_roofs(path="results/roofs.csv"):
+    """Roofs measured by bench/roofline. Absent -> figures simply omit them."""
+    try:
+        return {r["metric"]: float(r["value"]) for r in load(path)}
+    except (FileNotFoundError, KeyError, ValueError):
+        return {}
+
+
+def kind_roofline(rows):
+    """Node-level roofline. Arithmetic intensity is COMPULSORY traffic --
+    no hardware counters were available, so this is the algorithmic bound,
+    not measured DRAM traffic. Say so in the caption."""
+    roofs = read_roofs()
+    bw = roofs.get("stream_triad")
+    ceil = roofs.get("openblas_dgemm")
+    if not bw:
+        raise SystemExit("need results/roofs.csv -- run: make roofline BLAS=1 && "
+                         "./bench/roofline > results/roofs.csv")
+    M = N = 1024; K = 256
+    flops = 2.0 * M * N * K
+    comp_bytes = (M * K + K * N + 2.0 * M * N) * 8.0   # A + B + C read&write
+    ai = flops / comp_bytes
+    g = group(rows, ["kernel", "threads"])
+    pts = {k[0]: summarize(g[k])["gflops"] for k in g if k[1] == "1"}
+    peak = 2.8 * 8 * 2 * 2      # 2.8 GHz, 8 lanes, 2 flop/FMA, 2 FMA units
+    print(f"arithmetic intensity (compulsory) = {ai:.1f} flop/byte")
+    print(f"ridge point = {ceil/bw:.1f} flop/byte  -> "
+          f"{'compute' if ai > ceil/bw else 'memory'}-bound")
+    for k, v in sorted(pts.items(), key=lambda x: x[1]):
+        print(f"  {k:>8} {v:>7.2f} Gflop/s   {v/ceil*100:>5.1f}% of OpenBLAS"
+              f"  {v/peak*100:>5.1f}% of theoretical peak")
+    if HAVE_PLT:
+        fig, ax = plt.subplots(figsize=(5.4, 3.8))
+        xs = [2.0 ** e for e in range(-2, 9)]
+        ax.plot(xs, [min(bw * x, ceil) for x in xs], "k-", lw=2,
+                label=f"achievable roof ({bw:.1f} GB/s, {ceil:.0f} Gflop/s)")
+        ax.axhline(peak, ls=":", color="grey", label=f"theoretical peak {peak:.0f}")
+        for k, v in pts.items():
+            ax.plot(ai, v, "o", ms=8, label=f"{k} ({v:.1f})")
+        ax.axvline(ceil / bw, ls="--", color="lightgrey", lw=1)
+        ax.set_xscale("log", base=2); ax.set_yscale("log", base=2)
+        ax.set_xlabel("arithmetic intensity [flop/byte]")
+        ax.set_ylabel("Gflop/s")
+        ax.set_title("Node roofline, single core")
+        ax.legend(fontsize=7, loc="lower right")
+        ax.grid(alpha=0.3, which="both")
+        save(fig, "roofline.png")
+
+
 def kind_kernel(rows):
     """E1 -- local kernel ablation. Rates, so harmonic mean; the guide is
     explicit that arithmetic means of rates are wrong."""
@@ -204,8 +254,13 @@ def kind_kernel(rows):
                     for kn in kernels]
             ax.bar([x + i * w - 0.4 + w / 2 for x in range(len(kernels))], vals, w,
                    label=f"{t} thread{'s' if t > 1 else ''}")
+        ceil = read_roofs().get("openblas_dgemm")
+        if ceil:
+            ax.axhline(ceil, ls="--", color="crimson", lw=1.2)
+            ax.text(len(kernels) - 0.5, ceil, f" OpenBLAS {ceil:.0f}",
+                    va="bottom", ha="right", fontsize=8, color="crimson")
         ax.set_xticks(range(len(kernels))); ax.set_xticklabels(kernels)
-        ax.set_ylabel("Gflop/s (harmonic mean)"); ax.legend()
+        ax.set_ylabel("Gflop/s (harmonic mean)"); ax.legend(fontsize=8)
         ax.set_title("Local kernel ablation")
         save(fig, "kernel_ablation.png")
 
@@ -321,7 +376,8 @@ if __name__ == "__main__":
     ap.add_argument("csv")
     ap.add_argument("--kind", required=True,
                     choices=["strong", "ablation", "csweep", "shapes",
-                             "kernel", "engines", "bsweep", "weak", "hybrid"])
+                             "kernel", "engines", "bsweep", "weak", "hybrid",
+                             "roofline"])
     a = ap.parse_args()
     rows = load(a.csv)
     if not rows:
@@ -329,6 +385,7 @@ if __name__ == "__main__":
     {"strong": kind_strong, "ablation": kind_ablation,
      "csweep": kind_csweep, "shapes": kind_shapes,
      "kernel": kind_kernel, "engines": kind_engines, "bsweep": kind_bsweep,
-     "weak": kind_weak, "hybrid": kind_hybrid}[a.kind](rows)
+     "weak": kind_weak, "hybrid": kind_hybrid,
+     "roofline": kind_roofline}[a.kind](rows)
     if not HAVE_PLT:
         print("\n(matplotlib not installed -- numbers only)")
