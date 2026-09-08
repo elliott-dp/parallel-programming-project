@@ -1,10 +1,13 @@
 # Speaker guide — gemm2d presentation
 
-Generated from the speaker notes in `presentation.pptx`. Each section: what the slide shows, then the script. Q&A at the end.
+Read-aloud script. Line breaks are breathing points, not sentences. Say numbers roundly ("about thirty", "thirty-six percent faster").
+
+Generated from the speaker notes in `presentation.pptx` — edit `make_slides.js` and re-run it, not this file.
 
 
-## Slide 1 — A Generic Distributed-Memory GEMM
-with a Cost-Model-Driven Decomposition Planner
+---
+
+## Slide 1 — A Generic Distributed-Memory GEMM with a Cost-Model-Driven Decomposition Planner
 
 **On the slide:**
 
@@ -12,14 +15,19 @@ with a Cost-Model-Driven Decomposition Planner
 - Saif Edine Safi  ·  Student ID 245473
 - Parallel Computing — final project  ·  University of Trento
 
-**Script:**
+**Say:**
 
-[~0:30] Good morning/afternoon. My project is "gemm2d": a distributed-memory matrix multiplication — GEMM — that is *generic*: it works for any matrix shape and any number of processes, and it chooses its own decomposition at run time with a cost model.
+> [0:30]
+> Good morning. My project is called gemm2d.
+> 
+> It's a matrix multiplication that runs across many machines at once.
+> 
+> Two things make it different. It works for any matrix shape and any number of machines. And it decides how to split the work by itself, at run time.
+> 
+> I'll show you the problem, then the design, then five results, and then what's still missing.
 
-GEMM is C = alpha*A*B + beta*C. A is M by K, B is K by N, C is M by N. The matrices are spread over P MPI processes arranged in a 3D grid Pr x Pc x c.
 
-Plan for the next 15 minutes: the problem, the design (layout, engines, planner, kernel, verification), then five results and the honest limitations.
-
+---
 
 ## Slide 2 — The problem: “generic” is the hard part
 
@@ -34,17 +42,30 @@ Plan for the next 15 minutes: the problem, the design (layout, engines, planner,
 - Dimensions almost never divide evenly. Padding wastes flops and hides bugs.
 - In distributed memory, GEMM cost is dominated by data movement, not arithmetic — and data movement is decided by how operands are laid out across processes.
 
-**Script:**
+**Say:**
 
-[~1:00] Why is this a project at all? Matrix multiply is the kernel that dense linear algebra and most of deep learning reduce to. On one machine it's compute-bound; across many machines it's dominated by *data movement*, and how much data moves is decided by the layout of the operands across processes.
+> [1:00]
+> Matrix multiply is the operation almost everything reduces to. Linear algebra, and most of deep learning.
+> 
+> On one machine it's about arithmetic. Across many machines it's about moving data. And how much data moves depends entirely on how you split the matrices up.
+> 
+> Now, the word generic in my title is the whole problem.
+> 
+> A textbook implementation makes three assumptions. And all three are wrong in practice.
+> 
+> First, it assumes square matrices. But real problems are lopsided. Take a Gram matrix, A-transpose times A. Ten thousand samples, a hundred features. The output is only a hundred by a hundred, but the inner dimension is ten thousand. Tiny result, enormous amount of work.
+> 
+> Second, it assumes the number of processes is a perfect square. Four, nine, sixteen. But the scheduler gives you whatever is free. Sometimes seven. And seven has no square grid.
+> 
+> Third, it assumes the sizes divide evenly. They don't. The usual fix is to pad with zeros, and that's worse than it looks. You waste work, but more importantly you hide bugs. Because zeros contribute nothing, so a wrong answer still looks plausible.
+> 
+> So the question is: can we drop all three, and not lose performance?
+> 
+> --- IF ASKED ---
+> Why not just pad? It costs flops, but the real reason is debuggability: padded regions contribute zero, so an indexing bug gives a plausible wrong answer instead of an obviously wrong one.
 
-The word "generic" in the project title is the whole problem. A textbook implementation assumes three things: square matrices, a perfect-square process count, and dimensions divisible by the grid. Each fails in practice:
-- Shapes are skewed. A Gram matrix A-transpose-A has a huge K. A neural network layer often has a tiny K.
-- The scheduler gives you whatever it gives you — 7 processes, 13 processes.
-- Dimensions don't divide. The usual fix — zero padding — wastes work and, worse, hides bugs, because zeros make wrong results look plausible.
 
-So the question is: can we drop all three assumptions without giving up performance?
-
+---
 
 ## Slide 3 — Goals and scope
 
@@ -61,14 +82,29 @@ So the question is: can we drop all three assumptions without giving up performa
 - A verification strategy usable at full problem size
 - Explicit non-goals: sparse matrices, Strassen-class algorithms, GPU offload, fault tolerance.
 
-**Script:**
+**Say:**
 
-[~0:45] I define genericity on three axes. G1, shape: any M, N, K, plus the alpha/beta scaling. G2, machine: any process count including primes, any grid, non-divisible dimensions. Both are implemented and tested. G3, scalar type, I scoped out — the code is double-only, and I'll come back to it under future work.
+> [0:45]
+> Let me be precise about what generic means. I split it into three.
+> 
+> G1 is shape. Any M, N, K. Done and tested.
+> 
+> G2 is the machine. Any number of processes, including primes. Any grid. Sizes that don't divide. Also done and tested.
+> 
+> G3 is the data type, the same code working for float and double. I didn't do that one. It's double only.
+> 
+> Then four goals. Correctness for any input. A local kernel fast enough that my measurements actually show the communication. A planner that chooses the layout from measurements instead of convention. And a way to check correctness even on problems too big to verify directly.
+> 
+> And things I explicitly did not do: sparse matrices, Strassen-style algorithms, GPUs, fault tolerance.
+> 
+> --- WATCH OUT ---
+> Alpha and beta mean two different things in this project. Here they are the scalars in C = alpha AB + beta C. On slide 7 they are latency and inverse bandwidth. Know which slide you are on.
+> 
+> --- IF ASKED ---
+> Why is the kernel work relevant to a parallel computing project? If the kernel is slow, compute dominates communication by a hundred times, so every timing would just measure the inner loop. A fast kernel is a precondition for communication to be visible at all.
 
-Four objectives. One: correctness for arbitrary inputs. Two: a fast local kernel — if the inner loop is slow, every scaling curve just measures the inner loop and the communication behaviour is invisible. Three: a planner that chooses the process grid at run time from a calibrated cost model. Four: verification that still works at full size, where you can't compare against a sequential reference.
 
-Non-goals, so nobody expects them: sparse, Strassen, GPU, fault tolerance.
-
+---
 
 ## Slide 4 — State of the art — and the gap
 
@@ -76,22 +112,30 @@ Non-goals, so nobody expects them: sparse, Strassen, GPU, fault tolerance.
 
 - Our gap: how much of COSMA’s benefit is recovered by simply enumerating the grid factorisations of P and minimising a calibrated cost model? A few dozen lines, droppable into any SUMMA.
 
-**Script:**
+**Say:**
 
-[~1:15] Quick tour of the literature, because it motivates the design choices.
+> [1:15]
+> A quick tour of what already exists. Each of these justifies one of my decisions.
+> 
+> Cannon's algorithm, from 1969. It arranges the processes in a square and rotates the data step by step. Only neighbour-to-neighbour messages, very efficient. But it only works on a square grid with sizes that divide. Which is exactly what I refuse to assume. So it can't be my base.
+> 
+> SUMMA, from 1997. Instead of rotating, it broadcasts thin slices along rows and columns. The slice width is independent of the grid, and that's what makes it flexible. So that's my base engine.
+> 
+> ScaLAPACK deals its blocks out round-robin, like cards. That exists to balance the work in factorisations, where the work shrinks as you go. Matrix multiply has uniform work, so I don't need it. I use plain blocks and avoid the complicated indexing.
+> 
+> Then there's theory saying: if memory is tight, 2D is already optimal. But if you have spare memory, you can trade it for less communication. That's what 2.5D does. It splits the K dimension across layers.
+> 
+> And finally COSMA, from 2019. That's the state of the art. It finds a near-optimal layout for any shape and any machine.
+> 
+> So where is my contribution? COSMA is complicated. And meanwhile, most real code still hard-codes a square grid. So my question is: how much of that benefit do you get from something small enough that people would actually use it? A few dozen lines that try every possible grid and pick the cheapest.
+> 
+> It's a selector. I am not claiming it's optimal.
+> 
+> --- IF ASKED ---
+> Why not just use COSMA? For production you should. My question was what a minimal component recovers, because that is what gets adopted. A head-to-head against COSMA is first in my future work.
 
-Cannon's algorithm, 1969, is the classic 2D method: skew the matrices, then do square-root-of-P nearest-neighbour shifts. Bandwidth-optimal with very few messages, but it only works on a square grid with divisible dimensions — precisely the assumptions we're rejecting.
 
-SUMMA, 1997, replaces the shifts with broadcasts of narrow panels along process rows and columns. The panel width b is decoupled from the grid, so SUMMA is naturally generic. That's why it's our base engine.
-
-ScaLAPACK uses a block-cyclic layout. Block-cyclic exists to balance the triangular work in LU and QR; GEMM's work is uniform, so I deliberately use a plain 2D block distribution and avoid the index arithmetic.
-
-Communication lower bounds show that 2D algorithms are optimal only when memory is tight. With more memory, replication reduces communication — that's the 2.5D idea: split the k dimension over c layers, bandwidth drops by root-c, at the cost of a reduction at the end. The optimum is around c equals P to the one-third.
-
-COSMA is the state of the art: a near I/O-optimal decomposition for any combination of dimensions, process count and memory. Its optimality argument is elaborate. Meanwhile the common engineering default is still a hard-coded square grid regardless of shape.
-
-The gap I address is narrower and practical: how much of COSMA's benefit do you get by enumerating the small space of grid factorisations and minimising a *calibrated* performance model? It's a cost-model selector, explicitly not an I/O-optimality proof.
-
+---
 
 ## Slide 5 — One layout, four engines
 
@@ -114,18 +158,23 @@ The gap I address is narrower and practical: how much of COSMA's benefit do you 
 - summa25d
 - SUMMA per k-slab + MPI_Reduce over depth
 
-**Script:**
+**Say:**
 
-[~1:15] Now the design. All four engines share one data layout. A distributed matrix is a descriptor: the global dimensions, the local block dimensions and leading dimension, and the *global* index of the local element (0,0).
+> [1:15]
+> Now the design. All four of my algorithms share one data layout.
+> 
+> Each process holds a descriptor: how big the whole matrix is, how big its own piece is, and where its piece starts.
+> 
+> When the sizes don't divide, I don't pad. I just give some processes one extra row. Process zero gets three hundred and thirty-four rows, the others get three hundred and thirty-three.
+> 
+> That sounds minor, but it's the most useful decision in the whole codebase. Every awkward case, a ragged last block, a one-by-P grid, more processes than rows, all of them come down to that single function. So I test that one function hard, and everything else follows.
+> 
+> Second thing: nothing is created on process zero and then distributed. Each process generates its own piece from a hash of the coordinates. So element i,j has the same value no matter how many processes you run. That removes a bottleneck, and it means I can compare results across configurations exactly.
+> 
+> And on the right, the four engines. Naive 1D and Cannon are baselines. Note that Cannon refuses to run on cases it can't handle, rather than padding, and that refusal is my evidence for choosing SUMMA. SUMMA is the main one. And 2.5D adds the third dimension.
 
-Non-divisible dimensions are handled by balanced uneven blocks, not by zero padding: part i of G items over P parts gets floor(G/P) plus one if i is less than G mod P. I'd call concentrating every edge case into this one partition function the single most valuable structural decision in the code: ragged last blocks, degenerate 1-by-P grids and the case where there are more processes than rows all reduce to it.
 
-Second point: operands are never built on rank 0 and scattered. Each process generates its own block from a deterministic hash of the global index. This removes a memory bottleneck and, importantly, means element (i,j) has the same value for any P and any grid — so results are bit-comparable across configurations, which the tests rely on.
-
-Processes form a Pr by Pc by c grid, with row, column and depth communicators from MPI_Comm_split.
-
-The four engines, on the right: naive 1D and Cannon are baselines — Cannon *refuses* non-square grids and non-divisible dimensions rather than silently padding; that refusal is the measured argument for choosing SUMMA as the base. SUMMA is the main engine, and 2.5D SUMMA adds replication over depth.
-
+---
 
 ## Slide 6 — Generic SUMMA and the 2.5D engine
 
@@ -149,16 +198,25 @@ The four engines, on the right: naive 1D and Cannon are baselines — Cannon *re
 - k-slab variant (not the original A/B replication) composes with SUMMA in ~40 lines; only extra memory is c copies of C
 - βC applied on layer 0 only, other layers start from zero → αAB + βC exactly once
 
-**Script:**
+**Say:**
 
-[~1:15] Here is the SUMMA loop, and the one subtlety that makes it generic.
+> [1:15]
+> This is the SUMMA loop.
+> 
+> The idea: walk along the K dimension in thin slices. At each step, whoever owns that slice of A broadcasts it along its row of processes. Whoever owns that slice of B broadcasts it down its column. Then everyone multiplies the two thin slices and adds the result into their block. Move to the next slice, repeat.
+> 
+> Now here's the one subtle thing that makes it generic.
+> 
+> A's K dimension is divided among the columns of the grid. B's K dimension is divided among the rows. Those are two different divisions, unless everything is square and divides evenly.
+> 
+> So a slice can cross a boundary in A, or in B, or both. And that's line five: I clip every step to the overlap of both owners' ranges. That's the whole trick. It's what lets any grid and any size work.
+> 
+> On the right, the 2.5D engine. Each layer takes a chunk of K, runs a complete SUMMA on it, and produces a partial result. Then one reduction adds the partial results together.
+> 
+> I chose this form because it reuses the SUMMA code unchanged, about forty extra lines. And the only extra memory is one copy of C per layer.
 
-SUMMA walks along k in panels of width b. At each step, the process column owning that slice of A broadcasts it along the process row; the process row owning that slice of B broadcasts it down the process column; then everyone does a local rank-b update of C.
 
-The subtlety: A's k-dimension is partitioned over Pc columns, but B's k-dimension is partitioned over Pr rows. Those two partitions are different — unless the grid is square and everything divides. So a panel of width b may cross an ownership boundary in A, or in B, or both. The fix is line 5: each step is clipped to the intersection of both owners' ranges. That's what lets any grid and any dimension work, and the clipping is exercised by panel widths from 1 to 4096 in the test suite.
-
-The 2.5D engine on the right: each of the c layers gets a contiguous slab of the k dimension, runs a complete SUMMA on that slab, and then the partial C's are summed with one MPI_Reduce over the depth communicator. I used the k-slab formulation rather than Solomonik and Demmel's original, which replicates A and B across layers: the k-slab version reuses the SUMMA engine unchanged in about forty lines, and its only extra memory is c copies of C. Beta-C is applied on layer 0 only, other layers start from zero, so the reduction yields alpha-AB plus beta-C exactly once.
-
+---
 
 ## Slide 7 — Cost model and planner
 
@@ -174,20 +232,27 @@ The 2.5D engine on the right: each of the c layers gets a contiguous slab of the
 - α, β measured by ping-pong; γ by a panel-shaped run of the same kernel the run will use
 - Note: b appears only in the latency term — the model says b is purely a latency-vs-buffer knob. We test that later.
 
-**Script:**
+**Say:**
 
-[~1:30] The planner. The cost model is the standard alpha-beta-gamma form. Alpha is message latency, beta is inverse bandwidth, gamma is the achieved time per flop, w is the word size.
+> [1:30]
+> This is the model the planner minimises. Three terms.
+> 
+> The first is latency. How many messages you send, times the cost of one message.
+> 
+> The second is bandwidth. How many bytes you send, divided by the transfer speed.
+> 
+> The third is computation. How many operations, divided by how fast you do them.
+> 
+> The three constants, alpha beta gamma, I measure on the actual machine before running. Latency and bandwidth with a ping-pong test. And the compute speed by running the real kernel, the same one the run will use. If you calibrate with a different kernel, you're optimising for a machine that doesn't exist.
+> 
+> Then the planner just tries everything. Every way of factoring the process count into a grid, every panel width. Throws away anything that doesn't fit in memory. Returns the cheapest. And that costs microseconds.
+> 
+> I also checked it against theory. If you ignore latency, the maths says the grid shape should match the output shape. And the planner reproduces that on its own, from the numbers.
+> 
+> One thing to notice for later: the panel width only appears in the latency term. So the model claims it's purely a latency knob. Hold on to that. It turns out to be wrong.
 
-Three terms. Latency: number of broadcasts — K over c over b panels, each a log-depth broadcast along a row and a column — plus the final depth reduction. Bandwidth: the panel bytes each process receives, K over c times (M/Pr plus N/Pc), plus the 2.5D reduction of c copies of C. Compute: 2MNK over P.
 
-The planner is an exhaustive enumeration. Every c that divides P, every Pr that divides P over c, every panel width from 32 to 1024. Discard anything over the memory budget, return the minimiser. P is at most a few thousand, so this costs microseconds.
-
-A sanity check I insisted on: if you ignore latency and set c to 1, minimising K times (M/Pr + N/Pc) under Pr times Pc equals P gives Pr equals root of P·M/N. In words: the grid's aspect ratio should match the *output* matrix's aspect ratio. The enumerator reproduces that — for a tall 65536-by-1024 output on 64 processes it returns a 64-by-1 grid.
-
-Calibration: alpha and beta from ping-pong, gamma from running the actual local kernel on a panel-shaped problem — the same kernel the real run uses. If you calibrate with a different kernel, the planner optimises for a machine that doesn't exist.
-
-One thing to notice for later: b appears *only* in the latency term. The model says panel width is purely a latency-versus-buffer-memory knob. That's a prediction, and we'll see it's incomplete.
-
+---
 
 ## Slide 8 — Local kernel and verification
 
@@ -206,14 +271,27 @@ One thing to notice for later: b appears *only* in the latency term. The model s
 - 3. Distributed Freivalds test: random r, check A(Br) ≈ Cr in O(n²)
 - Cheap enough to leave on in production runs; vectors are O(n) and simply replicated
 
-**Script:**
+**Say:**
 
-[~1:15] Two supporting pieces: the local kernel and the verification.
+> [1:15]
+> Two supporting pieces.
+> 
+> First the local kernel. I have three versions. A textbook triple loop. A cache-blocked one. And a packed one, which copies the data into contiguous aligned buffers and uses an eight-by-eight block that stays in the CPU registers for the whole inner loop.
+> 
+> Small detail I'm proud of: the buffers are padded with zeros, so the inner loop always computes a full block and only writes back the part that's real. That means no branches in the hot loop, and no risk of reading out of bounds.
+> 
+> And threads take whole rows, so no two threads ever write the same output. No locks, no false sharing.
+> 
+> Second, correctness. Three layers.
+> 
+> Layer one: compare against a sequential reference. Forty-three test cases. Prime process counts, ugly sizes like sixty-one by fifty-three by forty-seven, degenerate grids, more processes than rows, panel widths from one to four thousand.
+> 
+> Layer two: I compare norms, never exact equality. Floating point never gives exact equality.
+> 
+> Layer three, and this is the interesting one: Freivalds' test. Pick a random vector r. Check that A times B times r equals C times r. That's n-squared work instead of n-cubed. So it's cheap enough to leave switched on in real runs, where there is no reference answer to compare against.
 
-Kernel. The distributed layer can't compensate for a bad inner loop, and a slow kernel inflates gamma until communication becomes invisible. So there are three selectable kernels. Naive: the textbook i-k-j loop. Blocked: cache tiling with operands read in place. Packed: copy A and B into contiguous, 64-byte-aligned panels and run an 8-by-8 register tile shaped so the compiler keeps the whole accumulator tile in vector registers across the k loop. Both packed panels are zero-padded, so the micro-kernel always computes a full tile and writes back only the live corner — no edge-case branch in the hot loop, no out-of-bounds access. Threading is over row blocks, so each thread owns whole rows of C: no reduction, no false sharing.
 
-Verification has three layers. Layer 1: an exact comparison against a sequential reference built from the same deterministic generator. A 43-case suite covers P from 1 to 9 including primes, awkward sizes like 61 by 53 by 47, degenerate 1-by-8 and 8-by-1 grids, more processes than rows, non-trivial alpha and beta, and panel widths from 1 to 4096. Layer 2: a norm-wise residual — never floating-point equality. Layer 3: a distributed Freivalds test. Draw a random vector r, check that A times (B r) is approximately C r. That's O(n squared) work instead of O(n cubed), cheap enough to leave enabled in production runs where no reference exists.
-
+---
 
 ## Slide 9 — Experimental setup
 
@@ -235,16 +313,25 @@ Verification has three layers. Layer 1: an exact comparison against a sequential
 - One CSV row per rep; medians + bootstrap 95% CI computed afterwards; harmonic mean for rates; no outliers removed
 - Each run sized to O(0.1 s) — shorter runs measure launch jitter
 
-**Script:**
+**Say:**
 
-[~1:00] Setup, briefly, because the caveats matter for interpreting what follows.
+> [1:00]
+> About the measurements.
+> 
+> Everything I'm about to show was run on a single node. Four cores, one Xeon. Processes pinned to cores, never oversubscribed.
+> 
+> The code targets the Trento cluster, and the job scripts are written, but those runs are still queued. So keep that in mind. What follows validates the algorithms and the model. It says nothing about a real network.
+> 
+> On the build, one flag I want to declare. I enable FMA contraction. It's about twenty percent faster, and it changes the very last bit of the result. It's much weaker than fast-math, no reordering of arithmetic. But it is a semantic change, so I say so rather than hiding it.
+> 
+> And the measurement protocol follows the standard guidelines. Ten repetitions, each a fresh process launch, with a warm-up first. A barrier before the timer. And I take the slowest process, because the slowest one is what you actually wait for.
+> 
+> I never average inside the C code. Every repetition goes to a CSV, and the statistics happen afterwards. Medians and bootstrap confidence intervals. No outliers removed.
+> 
+> And every run is sized to take about a tenth of a second. Anything shorter and you're just measuring process startup.
 
-Everything I'll show was measured on a single node: a 4-core Xeon at 2.8 GHz with AVX-512, Open MPI 4.1.6, ranks bound to cores, never oversubscribed. The code targets the University of Trento cluster — job scripts request four exclusive 72-core nodes with the CPU type and interconnect pinned so neither becomes an uncontrolled variable — but that multi-node campaign is queued, not complete. Keep that in mind: what follows validates the algorithms and the model, not the network.
 
-Build flags: O3, march native, and ffp-contract=fast. I call that one out explicitly: GCC disables FMA fusion in strict C11 mode, which costs about 20%. Enabling it changes results in the last bit. It's far weaker than fast-math — no reassociation — but it's a semantic change so it's disclosed.
-
-Protocol follows Hoefler and Belli's benchmarking guidelines. Ten repetitions per configuration, each a separate process launch with a warm-up. Barrier before the timer, time per rank reduced with MPI_MAX because the slowest rank defines the runtime. Configurations are interleaved so drift doesn't correlate with the variable under study. No averaging in C: one CSV row per repetition, medians and bootstrap confidence intervals computed afterwards, harmonic mean for rates, no outliers removed. Each run is sized to about a tenth of a second — shorter runs just measure launch jitter, which in an earlier iteration gave intervals a factor of several wide.
-
+---
 
 ## Slide 10 — Result 1 — the kernel decides what we can measure
 
@@ -257,18 +344,29 @@ Protocol follows Hoefler and Belli's benchmarking guidelines. Ten repetitions pe
 - M = N = 1024, K = 256 — one SUMMA panel. Flat thread scaling is a property of this 4-core node, not of the kernel.
 - Roofline: STREAM 11.9 GB/s → ridge at 5.6 flop/byte; this shape has 25.6. All kernels sit 4× past the ridge — the shortfall is vectorisation, not bandwidth. Gap to OpenBLAS is 2.2×, not an order of magnitude.
 
-**Script:**
+**Say:**
 
-[~1:00] First result: the kernel ablation, on a panel-shaped problem — 1024 by 1024 by 256, which is what one SUMMA step looks like.
+> [1:00]
+> Let's start with the local kernel. That's the code doing the actual multiply inside one process.
+> 
+> I wrote three versions. The naive one gets seven and a half gigaflops. The cache-blocked one, about ten. And the packed one, thirty.
+> 
+> So four times faster than naive.
+> 
+> For reference, I measured OpenBLAS on the same problem. It gets sixty-six. So I'm at about half of a professional library. For hand-written C, I'll take that.
+> 
+> Now, why am I showing you a single-core result in a parallel computing talk?
+> 
+> Because if the kernel is slow, computation swamps everything else. At ten gigaflops, compute is a hundred times bigger than communication. Every graph after this one would just be measuring my inner loop.
+> 
+> So a fast kernel isn't a bonus here. It's what makes the rest measurable.
+> 
+> On the right is a roofline. It tells you whether you're limited by memory or by the processor. The turning point is at five; my problem sits at twenty-five. All three kernels are far to the right of it. So they're compute-bound. The gap to the roof is about vectorisation, not memory.
+> 
+> One last note: the flat bars for four threads are just this machine. It only has four cores, and the MPI processes are already using them.
 
-Naive: 7.55 gigaflops per second. Cache-tiled: 9.83. Packed with the 8-by-8 register tile: 30.6. That's 4.05 times the naive kernel. As an external reference I measured single-threaded OpenBLAS dgemm on the same shape: 66.3 gigaflops — the dashed line — so the packed kernel is at 46% of a production BLAS. Since OpenBLAS exceeds the one-FMA-unit figure of 44.8, the core must issue two FMAs per cycle, giving a theoretical peak of 89.6, of which we reach 34%. Honest numbers for hand-written C.
 
-The right-hand plot is a node roofline. Measured STREAM bandwidth is 11.9 gigabytes per second, which puts the ridge point at 5.6 flops per byte. This panel shape has an arithmetic intensity of 25.6 flops per byte against compulsory traffic — no hardware counters were available, so it's an algorithmic bound. All three kernels sit four times past the ridge, firmly compute-bound. So the distance from the naive kernel to the roof cannot be explained by memory traffic; it's instruction-level parallelism and vector utilisation in the inner loop. That also bounds what further tuning could buy: the remaining gap to OpenBLAS is 2.2 times, not the order of magnitude a memory-bound reading would suggest.
-
-Why does this matter beyond the headline number? At 9.8 gigaflops the model's compute term dominates communication by two orders of magnitude. The planner would then be ranking configurations on differences of a fraction of a percent of predicted runtime. Fixing the kernel is a *precondition* for the decomposition to be measurable at all.
-
-The absence of thread scaling in the plot — the orange bars — is because the node has only 4 cores and MPI ranks already use them; it's a property of this measurement box, not of the kernel.
-
+---
 
 ## Slide 11 — Result 2 — the planner earns its place on skewed shapes
 
@@ -276,20 +374,36 @@ The absence of thread scaling in the plot — the orange bars — is because the
 
 - P = 4, medians of 10 runs with bootstrap 95% CIs. Three significant wins out of five — and the winning decompositions are ones a fixed 2D grid cannot express at all.
 
-**Script:**
+**Say:**
 
-[~1:30] The main result: the planner against a fixed near-square grid, on five shapes at P equals 4. Blue is the fixed grid, orange is the planner.
+> [1:30]  ** HEADLINE SLIDE. SLOW DOWN. **
+> This is the main result.
+> 
+> I ran five different matrix shapes on four processes. Blue is the standard fixed two-by-two grid. Orange is my planner choosing for itself.
+> 
+> Start with the first one, short and fat. Small output, huge inner dimension.
+> 
+> The planner picks one-by-one-by-four. Meaning: don't split the output at all. Split K four ways instead.
+> 
+> That's thirty-six percent faster. And notice, a fixed 2D grid can't even express that choice. It has no K axis.
+> 
+> Two more. When the matrix is wide, it picks a one-by-four grid, twenty-four percent faster. When it's tall, four-by-one, twelve percent.
+> 
+> For those three the confidence intervals don't overlap. So those wins are real.
+> 
+> The fourth one, tall-skinny, is nominally six percent faster, but the intervals overlap. So I don't claim it. I only claim it does no harm.
+> 
+> And the fifth one, square matrices, it actually loses. Five percent slower. And that one's real too.
+> 
+> So: three real wins out of five. Three is the honest score, not five.
+> 
+> The next slide explains the loss.
+> 
+> --- NOTE ---
+> The chart legend says fixed 8x8 grid. That is a wrong label from the plotting script. The experiment is at P=4, so the baseline is 2x2. Say so if anyone spots it.
 
-(Note for you: the plot legend says "fixed 8x8 grid" — that's a label from the plotting script, but the experiment is at P=4 so the baseline is a fixed 2x2. If asked, say so.)
 
-On short-fat operands — 512 by 512 output, K equals 32768 — the planner selects 1 by 1 by 4: pure k-parallelism, every process takes a quarter of the k dimension and the results are reduced at the end. That is 1.36 times faster, 0.228 seconds down to 0.167. A fixed 2D grid cannot reach this decomposition at all — it has no k axis.
-
-For M much smaller than N it picks 1 by 4 by 1, 1.24 times faster. For M much larger than N, 4 by 1 by 1, 1.12 times. On those three the bootstrap confidence intervals are disjoint, so the gains are real. So it reproduces the analytic rule — grid aspect ratio equals output aspect ratio — from measured data rather than from the formula.
-
-Tall-skinny gets 2 by 2 by 1 and is nominally 1.06 times faster, but the intervals overlap, so I claim no improvement there — only that the planner does no harm. Three significant wins out of five is the honest score.
-
-And it *loses* on the square case, by 5%: it picks 1 by 2 by 2 instead of 2 by 2 by 1. The intervals are disjoint there too, so it's a real regression, not noise. I report that rather than hiding it, and the next slide explains why it happens — the cause is visible in the model itself.
-
+---
 
 ## Slide 12 — Result 3 — the model, where it is right and where it is wrong
 
@@ -300,18 +414,33 @@ And it *loses* on the square case, by 5%: it picks 1 by 2 by 2 instead of 2 by 2
 - Here b is a kernel-efficiency knob, not a latency knob. Same reason the planner is blind on the square case: 10 ms comm vs 150 ms compute — differences below its own accuracy.
 - P = 4, n = 2048
 
-**Script:**
+**Say:**
 
-[~1:30] How good is the cost model? Calibration on this node gives alpha 1.3 microseconds, bandwidth 4.16 gigabytes per second, and 28.7 gigaflops per second for gamma.
+> [1:30]
+> So how good is the model?
+> 
+> First I measure the machine. Latency, one microsecond. Bandwidth, four gigabytes a second. Compute, about thirty gigaflops.
+> 
+> Then I compare prediction against reality. For panel widths from sixty-four up to five hundred, the model is within twenty percent. I'd fixed thirty percent as my threshold beforehand. So it passes.
+> 
+> But at panel width sixteen it's off by thirty-five percent. And the reason is interesting.
+> 
+> My model says the panel width only affects latency.
+> 
+> Now look at the table. The communication column barely moves. And the pure latency part is twenty microseconds. Nothing at all.
+> 
+> What actually changes is the compute column. Two hundred and twenty milliseconds, down to one hundred and twenty.
+> 
+> Because a narrow panel means lots of tiny kernel calls. And my kernel needs a wide panel to be efficient.
+> 
+> So the textbook says panel width is a latency knob. On this machine, it isn't. It's a kernel-efficiency knob. And leaving that out costs me a third.
+> 
+> And that's also why the planner lost on square matrices. There, communication is ten milliseconds against a hundred and fifty of compute. So it's ranking options that differ by less than one percent, which is below its own accuracy.
+> 
+> It's essentially guessing between near-ties.
 
-Evaluating the model at P equals 4, n equals 2048 against measured medians: for panel widths 64, 128, 256 and 512 the model-over-measured ratios are 1.08, 1.15, 1.20, 1.16. Within 20%, comfortably inside the plus-or-minus 30% acceptance threshold I set beforehand.
 
-At b equals 16, though, the model *under*-predicts by 35%. The table shows why. The model says only the latency term depends on b. The measured communication time is indeed small and flat — around 15 to 28 milliseconds, with the pure latency part just 21 microseconds. What actually varies with b is *compute*: 224 milliseconds at b equals 16, down to 119 at b equals 256. Narrow panels mean short, inefficient kernel invocations — the packed kernel can't amortise its packing cost on a 16-wide panel.
-
-So the textbook reading of b as a pure latency knob is wrong on this machine. b is dominated by local kernel efficiency, and a model that omits that term mispredicts by a third. That's a concrete limitation of the model that the measurements expose.
-
-The same thing explains the 5% regression on the square case from the previous slide: there, communication is 10 milliseconds against 150 of compute, so the planner is discriminating between candidates that differ by under 1% of predicted runtime — below the model's own accuracy. A refinement would be to fall back to the conventional grid whenever the predicted spread across candidates is smaller than the model's residual error.
-
+---
 
 ## Slide 13 — Result 4 — scaling, engines, replication
 
@@ -321,16 +450,29 @@ The same thing explains the 5% regression on the square case from the previous s
 - Engines, P = 4: SUMMA 120.1, 2.5D 117.3, naive1D 95.4 Gflop/s. naive1D moves 1.5× the bytes (K·N per rank, independent of P). Cannon 124.3 — only on the square divisible case.
 - c sweep: 0.138 / 0.145 / 0.225 s for c = 1, 2, 4. P^(1/3) = 1.59 lies between the feasible c = 1 and 2 — a decisive test needs larger P.
 
-**Script:**
+**Say:**
 
-[~1:15] Three smaller results, all single-node.
+> [1:15]
+> Three quicker results. All on one node.
+> 
+> First, scaling. One, two, four processes gives speedups of one point nine and three point five. That's eighty-nine percent efficiency at four.
+> 
+> But let me be clear, this is a single node. The network here is really just memory. It says nothing about a real cluster.
+> 
+> Second, the engines. SUMMA gets a hundred and twenty gigaflops. 2.5D, a hundred and seventeen. Naive 1D, only ninety-five.
+> 
+> The chart on the right shows why. Naive 1D moves one and a half times more data. And that's the point from the beginning: its traffic doesn't shrink when you add processes.
+> 
+> Cannon is actually the fastest, at a hundred and twenty-four. But only on the one case it's allowed to run, square and divisible. Slightly faster where it works, useless everywhere else.
+> 
+> That's exactly why I built on SUMMA.
+> 
+> Third, the replication depth. One is best, two slightly worse, four much worse.
+> 
+> That's expected. With only four processes, theory puts the optimum around one point six, so there's no useful value to pick. Testing that properly needs a bigger machine.
 
-Strong scaling at n equals 2048: speedups of 1.00, 1.92 and 3.55 at 1, 2 and 4 processes — 89% parallel efficiency at four, 124.5 gigaflops per second. I stress this is a shared-memory result: the "network" here is memory bandwidth. It validates the algorithms and the model but says nothing about real network behaviour.
 
-Engine comparison at P equals 4: SUMMA reaches 120, 2.5D 117, naive-1D 95 gigaflops per second. The right-hand panel shows why: naive 1D moves 0.101 gigabytes per rank against SUMMA's 0.067 — 1.5 times the traffic, because its per-rank volume is K times N regardless of P. It doesn't scale. Cannon is competitive — 124 — on the square, divisible instance it is restricted to: marginally faster where it applies, inapplicable everywhere else. That's the measured argument for SUMMA as the base engine.
-
-The replication sweep: c equals 1, 2, 4 gives 0.138, 0.145 and 0.225 seconds. With P equals 4, the theoretical optimum P to the one-third is 1.59, which lies between the feasible values 1 and 2 — so on this node replication can't help, and a decisive test of the c equals P-to-the-one-third rule needs a larger P on the cluster.
-
+---
 
 ## Slide 14 — Two more findings: a shared-memory broadcast, numerics
 
@@ -347,16 +489,27 @@ The replication sweep: c equals 1, 2, 4 gives 0.138, 0.145 and 0.225 seconds. Wi
 - relative residual across {engine, c, b}
 - Summation order changes with c and b, so results are not bitwise reproducible across configurations. Quantified rather than hidden: consistent with O(Kε) error growth.
 
-**Script:**
+**Say:**
 
-[~1:00] Two shorter findings.
+> [1:00]
+> Two smaller findings.
+> 
+> The first is a broadcast optimisation. Normally every process receives the panel over the network. Instead, one process per node receives it, and the others read it straight out of shared memory.
+> 
+> That halves the data crossing the network. And I verified that number.
+> 
+> But there's a catch worth telling you. Once the panel is shared, it's a shared resource. A fast process can overwrite a panel that a slower neighbour is still reading. So you need a barrier before reusing it.
+> 
+> And barriers are exactly what overlapping communication is supposed to avoid. So this trick doesn't combine with pipelining.
+> 
+> And since I only have one node, a timing comparison would be meaningless. So I report the mechanism and the byte saving, and I don't claim a speedup.
+> 
+> The second finding is numerical. When you change the configuration, the additions happen in a different order. So results aren't bit-identical across configurations.
+> 
+> Rather than hide that, I measured it. The error is around ten to the minus fifteen everywhere. That's exactly what you expect for double precision at this size.
 
-First, a broadcast mechanism. As an alternative to MPI-4 persistent collectives, I implemented a node-aware two-level broadcast on an MPI-3 shared-memory window: one leader per node participates in the inter-node broadcast, and the node's other ranks read the panel directly out of shared memory. With two ranks per node in the relevant communicator, modelled off-node traffic halves — 16.8 to 8.4 megabytes — exactly as predicted.
 
-But there's a catch worth reporting. Making the panel shared turns a private buffer into a critical section: a fast rank can overwrite a panel that a slower neighbour is still reading. So you need a barrier before each reuse — and those barriers are exactly what pipelining with lookahead tries to avoid. The technique doesn't compose with lookahead. And a timing comparison is meaningless on a single node, so I report the mechanism and the byte reduction and deliberately do not claim a speed-up.
-
-Second, numerics. Summation order changes with c and b, so results aren't bitwise reproducible across configurations. Rather than hide that, I quantify it: relative residuals across all engines, replication depths and panel widths span 8.7e-16 to 1.1e-15, consistent with error growing like K times machine epsilon. That's the expected behaviour for double precision.
-
+---
 
 ## Slide 15 — Conclusions and honest limitations
 
@@ -373,14 +526,29 @@ Second, numerics. Summation order changes with c and b, so results aren't bitwis
 - 2. Model attributes all b-dependence to latency; the dominant effect is kernel efficiency. Fix: a panel-width term in γ
 - 3. Results are single-node. They validate the algorithms, the model and the correctness argument; the multi-node campaign is queued, not complete. β across a real interconnect will differ by ~an order of magnitude
 
-**Script:**
+**Say:**
 
-[~1:15] To conclude.
+> [1:15]
+> So, to conclude.
+> 
+> A distributed matrix multiply can be genuinely generic. Any shape, any number of processes, any grid. Without giving up performance.
+> 
+> And the layout is worth choosing at run time. My planner is a few dozen lines, and it wins between twelve and thirty-six percent on three of the five shapes I tested. And it finds layouts a fixed 2D grid simply cannot express.
+> 
+> The model predicts real runtime within twenty percent, as long as the panel isn't tiny.
+> 
+> And correctness is solid. Forty-three tests pass, and the Freivalds check works at full scale.
+> 
+> Now the three limitations, and I want to be straight about them.
+> 
+> One. The planner loses five percent on square matrices, because there it's ranking options that differ by less than its own accuracy. The fix is simple: if the predictions are too close together, fall back to the conventional grid.
+> 
+> Two. My model blames the panel width on latency, when the real effect is kernel efficiency. The fix is to make the compute term depend on panel width.
+> 
+> Three, and this is the big one. Everything here is single node. It validates the algorithms, the model and the correctness. But it does not test the communication claims at scale. The multi-node runs are queued, not finished. And on a real network the bandwidth constant will be about ten times worse than what I measured here.
 
-What was shown: a distributed GEMM can be genuinely generic — arbitrary M, N, K, arbitrary P including primes, arbitrary grids — without giving up performance. And the process grid is worth choosing at run time rather than fixing by convention: a cost-model planner that costs a few dozen lines gives a statistically significant 1.12 to 1.36 times over a fixed near-square grid on three of the five shapes, and finds decompositions like 1-by-1-by-4 that a fixed 2D grid can't even express. The model predicts runtime within 20% where the panel width isn't pathologically small. Correctness is backed by 43 exact tests, a Freivalds check that runs at full size, and residuals around 1e-15.
 
-The honest limitations are three. First, the planner regresses by 5% on square operands, where the differences it ranks are below its own accuracy; gating it on the predicted spread would fix this. Second, the model attributes all b-dependence to latency, whereas the measured dominant effect is local kernel efficiency — adding a panel-width term to gamma is the obvious refinement. Third, and most important: the results are single-node. They validate the algorithms, the model and the correctness argument, but the multi-node campaign that would test the communication claims at scale is queued rather than complete, and beta measured across a real interconnect will differ from the intra-node value by roughly an order of magnitude.
-
+---
 
 ## Slide 16 — Future work and reproducibility
 
@@ -402,19 +570,80 @@ The honest limitations are three. First, the planner regresses by 5% on square o
 - Every figure regenerates from committed CSVs; bootstrap is seeded → byte-identical. docs/HPC.md, docs/EXPERIMENTS.md map each experiment to its figure.
 - Thank you — questions?
 
-**Script:**
+**Say:**
 
-[~0:45] Future work, in priority order. First, actually run the multi-node campaign — the job scripts exist. Second, type genericity: float and double through one code path via an include-template; float halves communication volume in the bandwidth-bound regime. Third, MPI-4 persistent collectives as a third broadcast policy. Fourth, a network roofline that places each configuration by its arithmetic intensity against the network. Fifth, a comparison against COSMA on the same shapes, which is the correct reference point for the planner claim.
-
-Everything is reproducible: source, job scripts, all raw CSVs and every figure are in the repository. make and run_tests gives 43 of 43. run_local reproduces the single-node campaign. Every figure regenerates from the committed CSVs with one command, and the bootstrap is seeded, so regeneration is byte-identical.
-
-Thank you — happy to take questions.
-
---- LIKELY QUESTIONS ---
-Q: Why not just use ScaLAPACK / a library? — The point was to study decomposition choice; a library hides it. Also block-cyclic is unnecessary for uniform GEMM work.
-Q: Why is the packed kernel only ~half of OpenBLAS? — Hand-written C micro-kernel relies on the compiler for vectorisation; no assembly, no prefetch tuning. 68% of single-core FMA peak is the honest figure.
-Q: Why does the planner lose on square? — The candidates differ by <1% of predicted time; below model accuracy. Fix: fall back to near-square grid when predicted spread < residual error.
-Q: Is 2.5D ever helpful here? — Not on 4 processes: P^(1/3)=1.59, no feasible c between 1 and 2. Needs larger P.
-Q: How do you verify at full size? — Freivalds: random r, check A(Br) ≈ Cr, O(n^2). Probability of a false pass is ≤ 1/2 per trial, trials are independent.
-Q: How is a prime P handled? — Grid becomes 1×P or P×1 (or with c). Uneven blocks handle any dimension. Test suite includes P=2,3,5,7.
-Q: What does -ffp-contract=fast change? — Fuses a*b+c into one FMA (one fewer rounding). No reassociation. Changes last bit; ~20% faster.
+> [0:45]
+> Future work, in the order I'd do it.
+> 
+> First: actually run the cluster campaign. The scripts are written.
+> 
+> Second: support float as well as double. That halves the data volume, which matters exactly when you're bandwidth-limited.
+> 
+> Third: persistent collectives from MPI-4, as a third broadcast option.
+> 
+> Fourth: a network roofline, to see which configurations are network-limited.
+> 
+> And fifth: compare against COSMA on the same shapes. That's the proper reference point for my claim, and it's the experiment I'd most want to run next.
+> 
+> Everything is reproducible. The source, the job scripts, the raw CSVs and every figure are in the repository. The tests build and pass with one command. And every figure regenerates from the committed data with a fixed random seed, so you get exactly the same picture.
+> 
+> Thank you. I'm happy to take questions.
+> 
+> =========================== Q&A CHEAT SHEET ===========================
+> 
+> Why not use ScaLAPACK or a library?
+>   The point was to study the decomposition choice, which a library hides. And block-cyclic
+>   exists for LU/QR load balance; GEMM work is uniform, so plain blocks are simpler and faster
+>   to index.
+> 
+> Your kernel is only half of OpenBLAS. Isn't that the bottleneck?
+>   It's hand-written C, no assembly. The roofline shows it's compute-bound, four times past
+>   the ridge, so the gap is vectorisation, not memory. What matters here is that it's fast
+>   enough for communication to be visible. Swapping in BLAS would only change gamma.
+> 
+> Why does the planner lose on square matrices? Doesn't that break your claim?
+>   On square shapes all candidates are within one percent in the model, below the model's own
+>   accuracy, so it's picking among near-ties. Fix: if the predicted spread is smaller than the
+>   residual error, keep the conventional grid. The wins are on skewed shapes, where candidates
+>   differ by tens of percent.
+> 
+> How does a prime P work?
+>   The only factorisations are 1xP or Px1, times c. Uneven blocks handle any dimension.
+>   Tested at P = 2, 3, 5, 7.
+> 
+> Is 2.5D ever useful in your results?
+>   Not at four processes: P to the one-third is 1.59, so no feasible c between 1 and 2. But
+>   it's what makes the 1x1x4 win possible, that IS the 2.5D engine. A real c sweep needs 64+.
+> 
+> How do you verify a result too big for a reference?
+>   Freivalds. Random vector r, check A(Br) is approximately Cr, n-squared work. A wrong C
+>   passes one trial with probability at most one half; trials are independent.
+> 
+> What does ffp-contract=fast change? Is it cheating?
+>   It fuses a*b+c into one FMA, one rounding instead of two. No reassociation, so it is not
+>   fast-math. Changes the last bit, gains about twenty percent, and can be turned off with
+>   one flag.
+> 
+> Why single node only?
+>   The multi-node campaign is scripted, six PBS jobs, but hadn't run in time. Single-node
+>   results validate correctness, algorithms and calibration. They cannot validate the
+>   communication claims, and I'd rather say that than present memory bandwidth as if it were
+>   an interconnect.
+> 
+> Why the k-slab 2.5D instead of the original Solomonik-Demmel?
+>   The original replicates A and B across layers and needs its own schedule. The k-slab form
+>   runs the existing SUMMA on a slice of K per layer plus one reduce. Forty lines, same
+>   asymptotics for GEMM, extra memory is only c copies of C.
+> 
+> What about float support?
+>   Not implemented, scalar_t is a compile-time double. Plan is an include-template plus an
+>   MPI type trait. Float halves communication volume, which is why it's first in future work
+>   after the cluster runs.
+> 
+> Is the shared-memory byte saving measured?
+>   No, it's a model: panel bytes the policy asks the network for. No hardware counters were
+>   available. I say so and don't claim a timing win.
+> 
+> Isn't your planner just a worse COSMA?
+>   Yes, deliberately. Smaller search space, no optimality proof, but calibrated to the actual
+>   machine and about forty lines. The contribution is the cost-benefit ratio, not beating COSMA.
