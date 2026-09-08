@@ -1,0 +1,7 @@
+tag,engine,bcast,kernel,gridmap,plan,M,N,K,P,Pr,Pc,c,b,threads,lookahead,rep,time_s,gflops,wire_gb,rank_gb,t_comm,t_comp,err
+policy_blocking_linear,summa,blocking,packed,linear,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.095297,22.535,0.016777,0.033554,0.077062,0.021678,-1.000e+00
+policy_blocking_nodeaware,summa,blocking,packed,nodeaware,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.096400,22.277,0.016777,0.033554,0.083067,0.021878,-1.000e+00
+policy_ibcast_linear,summa,ibcast,packed,linear,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.093072,23.073,0.016777,0.033554,0.068221,0.034331,-1.000e+00
+policy_ibcast_nodeaware,summa,ibcast,packed,nodeaware,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.096273,22.306,0.016777,0.033554,0.082349,0.039387,-1.000e+00
+policy_shm_linear,summa,shm,packed,linear,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.091240,23.537,0.008389,0.033554,0.075522,0.027869,-1.000e+00
+policy_shm_nodeaware,summa,shm,packed,nodeaware,0,1024,1024,1024,8,4,2,1,256,1,0,0,0.088846,24.171,0.008389,0.033554,0.070277,0.020293,-1.000e+00

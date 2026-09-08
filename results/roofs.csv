@@ -1,0 +1,4 @@
+metric,value,unit
+stream_triad,11.92,GB/s
+fma_microbench,26.35,Gflop/s
+openblas_dgemm,66.31,Gflop/s

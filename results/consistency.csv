@@ -1,0 +1,6 @@
+tag,engine,bcast,kernel,gridmap,plan,M,N,K,P,Pr,Pc,c,b,threads,lookahead,rep,time_s,gflops,wire_gb,rank_gb,t_comm,t_comp,err
+consist_summa_c1_b16,summa,blocking,packed,linear,0,401,397,389,4,2,2,1,16,1,0,0,0.002382,51.990,0.000000,0.002483,0.000936,0.001549,8.801e-16
+consist_summa_c1_b64,summa,blocking,packed,linear,0,401,397,389,4,2,2,1,64,1,0,0,0.002224,55.691,0.000000,0.002483,0.000802,0.001290,8.965e-16
+consist_summa_c1_b256,summa,blocking,packed,linear,0,401,397,389,4,2,2,1,256,1,0,0,0.002584,47.932,0.000000,0.002483,0.000817,0.001544,9.986e-16
+consist_summa25d_c2_b32,summa25d,blocking,packed,linear,0,401,397,389,4,1,2,2,32,1,0,0,0.002347,52.765,0.002547,0.002521,0.000977,0.001341,8.661e-16
+consist_summa25d_c4_b64,summa25d,blocking,packed,linear,0,401,397,389,4,1,1,4,64,1,0,0,0.003831,32.328,0.005094,0.003821,0.002247,0.001255,1.113e-15

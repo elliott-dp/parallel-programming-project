@@ -1,0 +1,6 @@
+*.o
+gemm2d
+# results/*.csv and plots/*.png are deliberately NOT ignored:
+# the architecture guide (S12) requires the raw CSVs to be committed as evidence.
+results/*.out
+results/*.err

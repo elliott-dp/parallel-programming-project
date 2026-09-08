@@ -1,0 +1,69 @@
+#!/bin/bash
+#PBS -N gemm2d_weak
+#PBS -o results/weak.out
+#PBS -e results/weak.err
+#PBS -q shortCPUQ
+#PBS -l walltime=3:00:00
+#PBS -l select=4:ncpus=64:mpiprocs=64:mem=64gb:cpu_type=Xeon6140M:net_type=OP
+#PBS -l place=scatter:excl
+
+# ---------------------------------------------------------------------------
+# NODE SELECTION -- all four resources below are deliberate.
+#
+#   cpu_type=Xeon6140M   one CPU generation. Mixing generations makes a
+#                        scaling curve measure node heterogeneity, not scaling.
+#                        It is ALSO a correctness requirement: the build uses
+#                        -march=native, so a binary compiled on a newer Xeon
+#                        (e.g. Cascade Lake Xeon6252N) can die with SIGILL on
+#                        an older one. jobs/smoke.pbs -- which does the build --
+#                        pins the same cpu_type for exactly this reason.
+#   net_type=OP          Omni-Path. Only 22 of shortCPUQ's nodes have it, and
+#                        pinning cpu_type alone would NOT be enough: 83 nodes
+#                        are Xeon6252N, of which 2 are Omni-Path and 81 are
+#                        10 GbE, so an allocation could silently straddle two
+#                        fabrics with a 10x difference in beta.
+#   place=scatter:excl   one chunk per physical node, exclusively. Nodes here
+#                        have 48-96 cores, so without scatter PBS may pack all
+#                        four chunks onto one machine and the "multi-node"
+#                        experiments would never cross the network.
+#   ncpus=64             of the 72 available. A power of two keeps the strong
+#                        scaling and hybrid sweeps clean.
+#
+# This gives 4 nodes x 64 = 256 ranks, drawn from the 15 x 72-core Xeon6140M
+# Omni-Path nodes -- the largest fully homogeneous group in this queue.
+#
+# To repeat the campaign on 10 GbE instead (a fabric comparison is a good
+# result in itself, see guide S9): drop ':net_type=OP' and use
+# ':cpu_type=Xeon6252N' with ncpus=96, which has 81 nodes behind it.
+# ---------------------------------------------------------------------------
+
+# E4 -- weak scaling. The guide (S11) insists the scaling function be stated
+# explicitly, so: MEMORY PER PROCESS IS HELD CONSTANT. Each rank owns
+# n^2/P elements of each matrix, so n grows as sqrt(P):
+#
+#     n(P) = n0 * sqrt(P / P0),   n0 = 2048 at P0 = 1
+#
+# Note the consequence, and say it in the report: total work is 2n^3, so
+# work per rank grows as sqrt(P). Constant memory per rank is NOT constant
+# work per rank for GEMM. A flat time curve would therefore be a bug, not a
+# success -- the expected curve rises as sqrt(P). Gustafson framing applies
+# to the memory-constrained problem, not to the flop count.
+cd "$PBS_O_WORKDIR" || exit 1
+EXPECT_NODES=4
+. jobs/env.sh
+
+# Do NOT build here. Six jobs share $PBS_O_WORKDIR, so a `make clean` in one
+# would delete the binary another is executing. Build once, before submitting:
+#     qsub -I -l select=1:ncpus=4 -q shortCPUQ   # then: . jobs/env.sh && make
+[ -x ./gemm2d ] || { echo "ERROR: ./gemm2d not built. See docs/HPC.md step 2."; exit 1; }
+export OMP_NUM_THREADS=1 OMP_PROC_BIND=close OMP_PLACES=cores
+
+for REP in $(seq 1 10); do            # REP outer: interleave (see strong.pbs)
+  for NP in 1 4 16 64 256; do
+    N=$(awk "BEGIN{printf \"%d\", 2048*sqrt($NP)}")
+    mpiexec -n $NP --map-by core --bind-to core \
+      ./gemm2d --M $N --N $N --K $N --engine summa --b 256 \
+               --verify freivalds --reps 1 --warmup 1 --quiet \
+               --tag weak --csv results/weak.csv
+  done
+done
